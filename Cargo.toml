@@ -1,0 +1,15 @@
+[package]
+name = "hyperlink"
+version = "0.1.0"
+authors = ["Markus Unterwaditzer <markus-honeypot@unterwaditzer.net>"]
+edition = "2018"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+structopt = "0.3.18"
+walkdir = "2.3.1"
+html5ever = "0.25.1"
+anyhow = "1.0.32"
+derive_more = "0.99.11"
+rayon = "1.4.1"
