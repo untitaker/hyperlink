@@ -1,9 +1,9 @@
 mod html;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::mem;
 use std::path::PathBuf;
 use std::process;
-use std::mem;
 use structopt::StructOpt;
 use walkdir::WalkDir;
 
@@ -25,10 +25,18 @@ struct Cli {
     /// How many threads to use, default is to try and saturate CPU.
     #[structopt(short = "j", long = "jobs")]
     threads: Option<usize>,
+
+    /// Whether to check for unreachable HTML pages. Adds very little overhead.
+    #[structopt(long = "check-unreachable")]
+    check_unreachable: bool,
 }
 
 fn main() -> Result<(), Error> {
-    let Cli { base_path, threads } = Cli::from_args();
+    let Cli {
+        base_path,
+        threads,
+        check_unreachable,
+    } = Cli::from_args();
 
     if let Some(n) = threads {
         rayon::ThreadPoolBuilder::new()
@@ -116,8 +124,21 @@ fn main() -> Result<(), Error> {
         }
 
         for link in links {
-            println!("Bad link {} at {}", href, link.path.display());
+            println!("ERROR: Bad link {} at {}", href, link.path.display());
             bad_links += 1;
+        }
+    }
+
+    let mut unreachable_documents = 0;
+
+    if check_unreachable {
+        for document in &documents {
+            debug_assert!(available_hrefs.contains(&document.href));
+
+            if !used_links.contains_key(&document.href) {
+                println!("WARNING: Unreachable file {}", document.path.display());
+                unreachable_documents += 1;
+            }
         }
     }
 
@@ -125,12 +146,24 @@ fn main() -> Result<(), Error> {
     println!("Checked {} files", documents.len());
     println!("Found {} bad links", bad_links);
 
+    if check_unreachable {
+        println!(
+            "Found {} unreachable documents",
+            unreachable_documents
+        );
+    }
+
     // We're about to exit the program and leaking the memory is faster than running drop
     mem::forget(used_links);
     mem::forget(available_hrefs);
+    mem::forget(documents);
 
     if bad_links > 0 {
         process::exit(1);
+    }
+
+    if unreachable_documents > 0 {
+        process::exit(2);
     }
 
     Ok(())

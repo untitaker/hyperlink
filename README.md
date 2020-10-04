@@ -35,6 +35,22 @@ cargo build --release
 ./target/release/hyperlink public/
 ```
 
+## Options
+
+* `-j/--jobs`: How many threads to spawn for parsing HTML. By default
+  `hyperlink` will attempt to saturate your CPU.
+
+* `--check-unreachable`: Also check for *unreachable* HTML pages, i.e. pages
+  that have not been linked to from anywhere. This is disabled by default.
+
+  Unreachable pages are considered warnings as they don't actually disrupt the
+  usability of the page.
+
+## Exit codes
+
+* `exit 1`: There have been errors.
+* `exit 2`: There have been only warnings.
+
 ## License
 
 Licensed under the MIT, see [`./LICENSE`](./LICENSE).
