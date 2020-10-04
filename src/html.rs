@@ -111,6 +111,7 @@ impl Document {
                                 href: self.join(value),
                                 path: self.path.clone(),
                             });
+                            continue;
                         }
                     }
                 };
