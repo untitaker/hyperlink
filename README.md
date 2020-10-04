@@ -1,14 +1,12 @@
 # hyperlink
 
-Very fast link checker for CI.
+Very fast link checker for static sites.
 
 * Supports traversing file-system paths only, no arbitrary URLs.
 
   * No support for the [`<base>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base) tag.
 
   * No support for external links. It does not know how to speak HTTP.
-
-* Does not parse/validate anchors *yet*.
 
 * Does not honor `robots.txt`. A broken link is still broken for users even if
   not indexed by Google.
@@ -23,8 +21,9 @@ Very fast link checker for CI.
 
   `hyperlink` handles this amount of data in 4 seconds on a MacBook Pro 2018.
 
-  In fairness, `hyperlink` does less, but in our case we need less. If it ever
-  does more, it will be possible to disable that to restore performance.
+* **Pay for what you need.** By default, `hyperlink` checks for *real* 404s in
+  HTML only. Anything beyond that is opt-in, such as finding broken anchors or
+  future features like parsing of CSS/JS. See [Options](#options).
 
 ## Usage
 
@@ -40,25 +39,22 @@ cargo build --release
 * `-j/--jobs`: How many threads to spawn for parsing HTML. By default
   `hyperlink` will attempt to saturate your CPU.
 
-* `--check-unreachable`: Also check for *unreachable* HTML pages, i.e. pages
-  that have not been linked to from anywhere. This is disabled by default.
-
-  Unreachable pages are considered warnings as they don't actually disrupt the
-  usability of the page.
+* `--check-anchors`: Opt-in, check for validity of anchors on pages. Broken
+  anchors are considered warnings, meaning that `hyperlink` will `exit 2` if
+  there are *only* broken anchors but no hard 404s.
 
 ## Exit codes
 
-* `exit 1`: There have been errors.
-* `exit 2`: There have been only warnings.
+* `exit 1`: There have been errors (hard 404s)
+* `exit 2`: There have been only warnings (broken anchors)
 
 ## Alternatives
 
 * [linkcheck](https://github.com/filiph/linkcheck) is definitely one of the
   faster linkcheckers out there, has great UX and a good set of features (more
-  than hyperlink). Unfortunately it still takes 10 minutes to crawl
-  docs.sentry.io, 150x over `hyperlink`. Other than performance it worked
-  really well for our usecase, and `hyperlink` takes some minor UX decisions
-  from linkchecker here and there.
+  than hyperlink). Other than performance it worked really well for our
+  usecase, and `hyperlink` takes some minor UX decisions from linkchecker here
+  and there.
 
   We tried `linkcheck` together with
   [`http-server`](https://www.npmjs.com/package/http-server) on localhost,

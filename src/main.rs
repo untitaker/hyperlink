@@ -9,7 +9,7 @@ use walkdir::WalkDir;
 
 use anyhow::{anyhow, Context, Error};
 
-use html::Document;
+use html::{Document, Link};
 use rayon::prelude::*;
 
 #[derive(StructOpt)]
@@ -26,16 +26,16 @@ struct Cli {
     #[structopt(short = "j", long = "jobs")]
     threads: Option<usize>,
 
-    /// Whether to check for unreachable HTML pages. Adds very little overhead.
-    #[structopt(long = "check-unreachable")]
-    check_unreachable: bool,
+    /// Whether to check for valid anchor references.
+    #[structopt(long = "check-anchors")]
+    check_anchors: bool,
 }
 
 fn main() -> Result<(), Error> {
     let Cli {
         base_path,
         threads,
-        check_unreachable,
+        check_anchors,
     } = Cli::from_args();
 
     if let Some(n) = threads {
@@ -47,7 +47,7 @@ fn main() -> Result<(), Error> {
 
     let base_path = base_path.canonicalize()?;
 
-    let mut available_hrefs = BTreeSet::new();
+    let mut file_hrefs = BTreeSet::new();
     let mut documents = Vec::new();
 
     println!("Discovering files");
@@ -70,7 +70,7 @@ fn main() -> Result<(), Error> {
 
         let document = Document::new(&base_path, entry.path());
 
-        if !available_hrefs.insert(document.href.clone()) {
+        if !file_hrefs.insert(document.href.clone()) {
             panic!("Found two files that would probably serve the same href. One of them is {}. Please file a bug with the output of 'find' on your folder.", entry.path().display());
         }
 
@@ -86,83 +86,90 @@ fn main() -> Result<(), Error> {
     println!(
         "Checking {} out of {} files",
         documents.len(),
-        available_hrefs.len()
+        file_hrefs.len()
     );
 
-    let used_links: Result<_, Error> = documents
+    let extracted_links: Result<_, Error> = documents
         .par_iter()
-        .try_fold(BTreeMap::new, |mut used_links, document| {
-            document
-                .links(|link| {
+        .try_fold(
+            || (BTreeMap::new(), BTreeSet::new()),
+            |(mut used_links, mut defined_links), document| {
+                document
+                    .links(check_anchors, |link| match link {
+                        Link::Uses(used_link) => {
+                            used_links
+                                .entry(used_link.href.clone())
+                                .or_insert_with(Vec::new)
+                                .push(used_link);
+                        }
+                        Link::Defines(href) => {
+                            defined_links.insert(href);
+                        }
+                    })
+                    .with_context(|| format!("Failed to read file {}", document.path.display()))?;
+
+                Ok((used_links, defined_links))
+            },
+        )
+        .try_reduce(
+            || (BTreeMap::new(), BTreeSet::new()),
+            |(mut used_links, mut defined_links), (used_links2, defined_links2)| {
+                for (href, links) in used_links2 {
                     used_links
-                        .entry(link.href.clone())
+                        .entry(href)
                         .or_insert_with(Vec::new)
-                        .push(link);
-                })
-                .with_context(|| format!("Failed to read file {}", document.path.display()))?;
+                        .extend(links);
+                }
 
-            Ok(used_links)
-        })
-        .try_reduce(BTreeMap::new, |mut used_links, used_links2| {
-            for (href, links) in used_links2 {
-                used_links
-                    .entry(href)
-                    .or_insert_with(Vec::new)
-                    .extend(links);
-            }
+                defined_links.extend(defined_links2);
+                Ok((used_links, defined_links))
+            },
+        );
 
-            Ok(used_links)
-        });
+    let (used_links, mut defined_links) = extracted_links?;
+    defined_links.extend(file_hrefs);
 
-    let used_links = used_links?;
-
+    let used_links_len = used_links.len();
     let mut bad_links = 0;
+    let mut bad_anchors = 0;
 
-    for (href, links) in &used_links {
-        if available_hrefs.contains(&href) {
-            continue;
-        }
+    for (href, links) in used_links {
+        if !defined_links.contains(&href) {
+            let hard_404 = !check_anchors || !defined_links.contains(&href.without_anchor());
 
-        for link in links {
-            println!("ERROR: Bad link {} at {}", href, link.path.display());
-            bad_links += 1;
-        }
-    }
+            if hard_404 {
+                bad_links += links.len();
 
-    let mut unreachable_documents = 0;
+                for link in links {
+                    println!("ERROR: Bad link {} at {}", href, link.path.display());
+                }
+            } else {
+                bad_anchors += links.len();
 
-    if check_unreachable {
-        for document in &documents {
-            debug_assert!(available_hrefs.contains(&document.href));
-
-            if !used_links.contains_key(&document.href) {
-                println!("WARNING: Unreachable file {}", document.path.display());
-                unreachable_documents += 1;
+                for link in links {
+                    println!("WARNING: Bad anchor {} at {}", href, link.path.display());
+                }
             }
         }
     }
 
-    println!("Found {} used links", used_links.len());
+    println!("Checked {} links", used_links_len);
     println!("Checked {} files", documents.len());
     println!("Found {} bad links", bad_links);
 
-    if check_unreachable {
-        println!(
-            "Found {} unreachable documents",
-            unreachable_documents
-        );
+    if check_anchors {
+        println!("Found {} bad anchors", bad_anchors);
     }
 
     // We're about to exit the program and leaking the memory is faster than running drop
-    mem::forget(used_links);
-    mem::forget(available_hrefs);
+    mem::forget(defined_links);
     mem::forget(documents);
 
     if bad_links > 0 {
         process::exit(1);
     }
 
-    if unreachable_documents > 0 {
+    if bad_anchors > 0 {
         process::exit(2);
     }
 
