@@ -3,6 +3,7 @@ mod html;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::process;
+use std::mem;
 use structopt::StructOpt;
 use walkdir::WalkDir;
 
@@ -123,6 +124,10 @@ fn main() -> Result<(), Error> {
     println!("Found {} used links", used_links.len());
     println!("Checked {} files", documents.len());
     println!("Found {} bad links", bad_links);
+
+    // We're about to exit the program and leaking the memory is faster than running drop
+    mem::forget(used_links);
+    mem::forget(available_hrefs);
 
     if bad_links > 0 {
         process::exit(1);
