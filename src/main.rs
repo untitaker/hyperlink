@@ -6,7 +6,7 @@ use std::process;
 use structopt::StructOpt;
 use walkdir::WalkDir;
 
-use anyhow::{Context, Error};
+use anyhow::{anyhow, Context, Error};
 
 use html::Document;
 use rayon::prelude::*;
@@ -46,15 +46,23 @@ fn main() -> Result<(), Error> {
     for entry in WalkDir::new(&base_path) {
         let entry = entry?;
         let metadata = entry.metadata()?;
+        let file_type = metadata.file_type();
 
-        if !metadata.is_file() {
+        if file_type.is_symlink() {
+            return Err(anyhow!(
+                "Found unsupported symlink at {}",
+                entry.path().display()
+            ));
+        }
+
+        if !file_type.is_file() {
             continue;
         }
 
         let document = Document::new(&base_path, entry.path());
 
         if !available_hrefs.insert(document.href.clone()) {
-            panic!("Found two files that would probably serve the same href. Please file a bug with the output of 'find' on your folder.");
+            panic!("Found two files that would probably serve the same href. One of them is {}. Please file a bug with the output of 'find' on your folder.", entry.path().display());
         }
 
         if document
@@ -75,15 +83,14 @@ fn main() -> Result<(), Error> {
     let used_links: Result<_, Error> = documents
         .par_iter()
         .try_fold(BTreeMap::new, |mut used_links, document| {
-            for link in document
-                .links()
-                .with_context(|| format!("Failed to read file {}", document.path.display()))?
-            {
-                used_links
-                    .entry(link.href.clone())
-                    .or_insert_with(Vec::new)
-                    .push(link);
-            }
+            document
+                .links(|link| {
+                    used_links
+                        .entry(link.href.clone())
+                        .or_insert_with(Vec::new)
+                        .push(link);
+                })
+                .with_context(|| format!("Failed to read file {}", document.path.display()))?;
 
             Ok(used_links)
         })

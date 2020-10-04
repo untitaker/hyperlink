@@ -1,14 +1,41 @@
-use std::fs::File;
-use std::io;
-use std::path::{Path, PathBuf};
+use std::fs;
+use std::path::{Component, Path, PathBuf};
+use std::str;
 
-use html5ever::tendril::{ByteTendril, ReadExt, StrTendril};
-use html5ever::tokenizer::{
-    BufferQueue, Token, TokenSink, TokenSinkResult, Tokenizer, TokenizerResult,
-};
+use anyhow::Error;
+use xmlparser::{Token, Tokenizer};
+
+static BAD_SCHEMAS: &[&str] = &[
+    "http://", "https://", "irc://", "ftp://", "mailto:", "data:",
+];
 
 fn force_relative(path: &Path) -> &Path {
     path.strip_prefix("/").unwrap_or(path)
+}
+
+/// A version of fs::canonicalize that just resolves ../ and therefore does no IO
+fn simple_canonicalize(path: &Path) -> PathBuf {
+    let mut rv = PathBuf::new();
+
+    for component in path.components() {
+        if component == Component::ParentDir {
+            rv.pop();
+        } else {
+            rv.push(component);
+        }
+    }
+
+    rv
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash, derive_more::Display, Ord, PartialOrd)]
+#[display(fmt = "{}", "_0.display()")]
+pub struct Href(PathBuf);
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Link {
+    pub href: Href,
+    pub path: PathBuf,
 }
 
 pub struct Document {
@@ -42,123 +69,59 @@ impl Document {
         }
     }
 
-    pub fn links(&self) -> io::Result<Vec<Link>> {
-        self.links_from_read(File::open(&self.path)?)
-    }
-
-    fn join(&self, rel_href: StrTendril) -> Href {
-        let rel_href = &rel_href[..];
+    fn join(&self, rel_href: &str) -> Href {
         let trim_to = rel_href.find(&['#', '?'][..]).unwrap_or(rel_href.len());
         let rel_href = &rel_href[..trim_to];
 
-        let unsanitized_href = force_relative(&self.href.0.join(rel_href)).to_owned();
+        let unsanitized_href = self.href.0.join(rel_href);
+        let unsanitized_href = force_relative(&unsanitized_href);
+        let sanitized_href = simple_canonicalize(unsanitized_href);
 
-        let unsanitized_href = self.base_path.join(unsanitized_href);
-
-        let sanitized_href = unsanitized_href
-            .canonicalize()
-            // XXX: if the link does not exist, this will fail. In that case the link error will be
-            // reported with `..` in it, but that's fine.
-            .unwrap_or_else(|_| unsanitized_href)
-            .strip_prefix(&self.base_path)
-            .expect("base_path is not a base of path")
-            .to_owned();
-
-        Href(sanitized_href)
+        Href(sanitized_href.to_owned())
     }
 
-    fn links_from_read<R: io::Read>(&self, mut readable: R) -> io::Result<Vec<Link>> {
-        let mut byte_tendril = ByteTendril::new();
-        readable.read_to_tendril(&mut byte_tendril)?;
+    pub fn links<F: FnMut(Link)>(&self, mut sink: F) -> Result<(), Error> {
+        let text = fs::read_to_string(&self.path)?;
 
-        let str_tendril = byte_tendril.try_reinterpret().map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "file did not contain valid UTF-8",
-            )
-        })?;
+        let mut current_tag = None;
 
-        let mut buffer_queue = BufferQueue::new();
-        buffer_queue.push_back(str_tendril);
+        for token in Tokenizer::from(text.as_str()) {
+            let token = token?;
 
-        let mut links = Vec::new();
-        let mut tokenizer = Tokenizer::new(
-            LinkSink {
-                into: &mut links,
-                document: &self,
-            },
-            Default::default(),
-        );
-
-        loop {
-            if matches!(tokenizer.feed(&mut buffer_queue), TokenizerResult::Done) {
-                break;
+            if let Token::ElementEnd { .. } = &token {
+                current_tag = None;
+                continue;
             }
-        }
 
-        Ok(links)
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Hash, derive_more::Display, Ord, PartialOrd)]
-#[display(fmt = "{}", "_0.display()")]
-pub struct Href(PathBuf);
-
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct Link {
-    pub href: Href,
-    pub path: PathBuf,
-    pub lineno: u64,
-}
-
-struct LinkSink<'a> {
-    into: &'a mut Vec<Link>,
-    document: &'a Document,
-}
-
-static BAD_SCHEMAS: &[&str] = &[
-    "http://", "https://", "irc://", "ftp://", "mailto:", "data:",
-];
-
-impl<'a> TokenSink for LinkSink<'a> {
-    type Handle = ();
-
-    fn process_token(&mut self, token: Token, line_number: u64) -> TokenSinkResult<Self::Handle> {
-        match token {
-            Token::TagToken(tag) => {
-                macro_rules! extract_tag {
-                    ($tag_name:expr, $attr_name:expr) => {
-                        if &tag.name == $tag_name {
-                            let document = &self.document;
-                            self.into.extend(
-                                tag.attrs
-                                    .into_iter()
-                                    .filter(|attr| {
-                                        &attr.name.local == $attr_name
-                                            && BAD_SCHEMAS
-                                                .iter()
-                                                .all(|schema| !attr.value.starts_with(schema))
-                                    })
-                                    .map(|attr| Link {
-                                        href: document.join(attr.value),
-                                        lineno: line_number,
-                                        path: document.path.clone(),
-                                    }),
-                            );
-                            return TokenSinkResult::Continue;
+            macro_rules! extract_tag {
+                ($tag_name:expr, $attr_name:expr) => {
+                    if let Token::ElementStart { local, .. } = &token {
+                        if &**local == $tag_name {
+                            current_tag = Some($tag_name);
+                            continue;
                         }
-                    };
-                }
+                    }
 
-                extract_tag!("a", "href");
-                extract_tag!("img", "src");
-                extract_tag!("link", "href");
-                extract_tag!("script", "src");
-                extract_tag!("script", "src");
+                    if let Token::Attribute { local, value, .. } = &token {
+                        if current_tag == Some($tag_name)
+                            && &**local == $attr_name
+                            && BAD_SCHEMAS.iter().all(|schema| !value.starts_with(schema))
+                        {
+                            sink(Link {
+                                href: self.join(value),
+                                path: self.path.clone(),
+                            });
+                        }
+                    }
+                };
             }
-            _ => (),
+
+            extract_tag!("a", "href");
+            extract_tag!("img", "src");
+            extract_tag!("link", "href");
+            extract_tag!("script", "src");
         }
 
-        TokenSinkResult::Continue
+        Ok(())
     }
 }
