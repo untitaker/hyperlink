@@ -120,6 +120,9 @@ impl Document {
             extract_tag!("img", "src");
             extract_tag!("link", "href");
             extract_tag!("script", "src");
+            extract_tag!("iframe", "src");
+            extract_tag!("area", "href");
+            extract_tag!("object", "data");
         }
 
         Ok(())

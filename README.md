@@ -1,14 +1,30 @@
 # hyperlink
 
-A very fast and simple link checker to be run in CI. Was created because
-[linkcheck](https://github.com/filiph/linkcheck) was too slow for us, although
-otherwise it worked well.
+Very fast link checker for CI.
 
-* Supports file-system paths only.
-* No support for external links.
-* No support for anchors *for now*. If anchors support is added, it will be
-  opt-out for those wo want to preserve performance.
-* Fast.
+* Supports traversing file-system paths only, no arbitrary URLs.
+
+  * No support for the [`<base>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base) tag.
+
+  * No support for external links. It does not know how to speak HTTP.
+
+* Does not parse/validate anchors *yet*.
+
+* Does not honor `robots.txt`. A broken link is still broken for users even if
+  not indexed by Google.
+
+* Does not parse CSS files, as broken links in CSS have not been a practical
+  concern for us. We are concerned about broken link in the page content, not
+  the chrome around it.
+
+* **Fast.** On [docs.sentry.io](https://github.com/getsentry/sentry-docs),
+  [linkcheck](https://github.com/filiph/linkcheck) takes 10 minutes on a
+  MacBook Pro 2018, this one takes 4 seconds. We tried `linkcheck` together
+  with [`http-server`](https://www.npmjs.com/package/http-server) on localhost,
+  although that does not seem to be the bottleneck.
+
+  In fairness, `hyperlink` does less, but in our case we need less. If it ever
+  does more, it will be possible to disable that to restore performance.
 
 ## Usage
 
