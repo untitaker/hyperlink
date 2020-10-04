@@ -43,15 +43,7 @@ impl Document {
     }
 
     pub fn links(&self) -> io::Result<Vec<Link>> {
-        if self
-            .path
-            .extension()
-            .map_or(false, |extension| extension == "html" || extension == "htm")
-        {
-            self.links_from_read(File::open(&*self.path)?)
-        } else {
-            Ok(Vec::new())
-        }
+        self.links_from_read(File::open(&self.path)?)
     }
 
     fn join(&self, rel_href: StrTendril) -> Href {
@@ -87,57 +79,82 @@ impl Document {
         })?;
 
         let mut buffer_queue = BufferQueue::new();
-        buffer_queue.push_back(str_tendril); // XXX: actually drops data?
-        debug_assert!(!buffer_queue.is_empty());
+        buffer_queue.push_back(str_tendril);
 
-        let mut tokenizer = Tokenizer::new(LinkSink, Default::default());
         let mut links = Vec::new();
+        let mut tokenizer = Tokenizer::new(
+            LinkSink {
+                into: &mut links,
+                document: &self,
+            },
+            Default::default(),
+        );
 
-        'append: while let TokenizerResult::Script((href, lineno)) =
-            tokenizer.feed(&mut buffer_queue)
-        {
-            for schema in &["http://", "https://", "irc://", "ftp://", "mailto:"] {
-                if href.starts_with(schema) {
-                    continue 'append;
-                }
+        loop {
+            if matches!(tokenizer.feed(&mut buffer_queue), TokenizerResult::Done) {
+                break;
             }
-
-            links.push(Link {
-                href: self.join(href),
-                lineno,
-                path: self.path.clone(),
-            });
         }
 
         Ok(links)
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash, derive_more::Display)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, derive_more::Display, Ord, PartialOrd)]
 #[display(fmt = "{}", "_0.display()")]
 pub struct Href(PathBuf);
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Link {
     pub href: Href,
     pub path: PathBuf,
     pub lineno: u64,
 }
 
-struct LinkSink;
+struct LinkSink<'a> {
+    into: &'a mut Vec<Link>,
+    document: &'a Document,
+}
 
-impl TokenSink for LinkSink {
-    type Handle = (StrTendril, u64);
+static BAD_SCHEMAS: &[&str] = &[
+    "http://", "https://", "irc://", "ftp://", "mailto:", "data:",
+];
+
+impl<'a> TokenSink for LinkSink<'a> {
+    type Handle = ();
 
     fn process_token(&mut self, token: Token, line_number: u64) -> TokenSinkResult<Self::Handle> {
         match token {
             Token::TagToken(tag) => {
-                if &tag.name == "a" {
-                    for attr in tag.attrs {
-                        if &attr.name.local == "href" {
-                            return TokenSinkResult::Script((attr.value, line_number));
+                macro_rules! extract_tag {
+                    ($tag_name:expr, $attr_name:expr) => {
+                        if &tag.name == $tag_name {
+                            let document = &self.document;
+                            self.into.extend(
+                                tag.attrs
+                                    .into_iter()
+                                    .filter(|attr| {
+                                        &attr.name.local == $attr_name
+                                            && BAD_SCHEMAS
+                                                .iter()
+                                                .all(|schema| !attr.value.starts_with(schema))
+                                    })
+                                    .map(|attr| Link {
+                                        href: document.join(attr.value),
+                                        lineno: line_number,
+                                        path: document.path.clone(),
+                                    }),
+                            );
+                            return TokenSinkResult::Continue;
                         }
-                    }
+                    };
                 }
+
+                extract_tag!("a", "href");
+                extract_tag!("img", "src");
+                extract_tag!("link", "href");
+                extract_tag!("script", "src");
+                extract_tag!("script", "src");
             }
             _ => (),
         }

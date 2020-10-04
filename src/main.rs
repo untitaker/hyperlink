@@ -1,6 +1,6 @@
 mod html;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::process;
 use structopt::StructOpt;
@@ -29,12 +29,16 @@ struct Cli {
 fn main() -> Result<(), Error> {
     let Cli { base_path, threads } = Cli::from_args();
 
-    if let Some(n) = threads { 
-        rayon::ThreadPoolBuilder::new().num_threads(n).build_global().unwrap();
+    if let Some(n) = threads {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(n)
+            .build_global()
+            .unwrap();
     }
 
     let base_path = base_path.canonicalize()?;
 
+    let mut available_hrefs = BTreeSet::new();
     let mut documents = Vec::new();
 
     println!("Discovering files");
@@ -48,14 +52,29 @@ fn main() -> Result<(), Error> {
         }
 
         let document = Document::new(&base_path, entry.path());
-        documents.push(document);
+
+        if !available_hrefs.insert(document.href.clone()) {
+            panic!("Found two files that would probably serve the same href. Please file a bug with the output of 'find' on your folder.");
+        }
+
+        if document
+            .path
+            .extension()
+            .map_or(false, |extension| extension == "html" || extension == "htm")
+        {
+            documents.push(document);
+        }
     }
 
-    println!("Checking {} files", documents.len());
+    println!(
+        "Checking {} out of {} files",
+        documents.len(),
+        available_hrefs.len()
+    );
 
     let used_links: Result<_, Error> = documents
         .par_iter()
-        .try_fold(HashMap::new, |mut used_links, document| {
+        .try_fold(BTreeMap::new, |mut used_links, document| {
             for link in document
                 .links()
                 .with_context(|| format!("Failed to read file {}", document.path.display()))?
@@ -68,40 +87,34 @@ fn main() -> Result<(), Error> {
 
             Ok(used_links)
         })
-        .try_reduce(HashMap::new, |mut used_links, used_links2| {
+        .try_reduce(BTreeMap::new, |mut used_links, used_links2| {
             for (href, links) in used_links2 {
                 used_links
                     .entry(href)
                     .or_insert_with(Vec::new)
                     .extend(links);
             }
+
             Ok(used_links)
         });
 
     let used_links = used_links?;
 
-    let mut existing_links = HashSet::new();
-    for document in documents {
-        if !existing_links.insert(document.href) {
-            panic!("Found two files that would probably serve the same href. Please file a bug with the output of 'find' on your folder.");
-        }
-    }
-
     let mut bad_links = 0;
 
     for (href, links) in &used_links {
-        if existing_links.contains(&href) {
+        if available_hrefs.contains(&href) {
             continue;
         }
 
         for link in links {
-            println!("Bad link {} at {}", link.href, link.path.display());
+            println!("Bad link {} at {}", href, link.path.display());
             bad_links += 1;
         }
     }
 
     println!("Found {} used links", used_links.len());
-    println!("Crawled {} files", existing_links.len());
+    println!("Checked {} files", documents.len());
     println!("Found {} bad links", bad_links);
 
     if bad_links > 0 {

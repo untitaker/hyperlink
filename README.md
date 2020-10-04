@@ -8,9 +8,7 @@ otherwise it worked well.
 * No support for external links.
 * No support for anchors *for now*. If anchors support is added, it will be
   opt-out for those wo want to preserve performance.
-* Only checks links that are actually likely to break in your average static
-  site. That means no odd crawling of included CSS and JavaScript.
-* Abililty to actually max out your CPU.
+* Fast.
 
 ## Usage
 
