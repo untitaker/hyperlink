@@ -101,79 +101,87 @@ impl Document {
     pub fn links<F: FnMut(Link)>(&self, check_anchors: bool, mut sink: F) -> Result<(), Error> {
         let text = fs::read_to_string(&self.path)?;
 
-        let mut current_tag = None;
+        let mut current_tag = CurrentTag::None;
 
         for token in Tokenizer::from(text.as_str()) {
-            let token = token?;
-
-            if let Token::ElementEnd { .. } = &token {
-                current_tag = None;
-                continue;
-            }
-
-            macro_rules! extract_used_link {
-                ($tag_name:expr, $attr_name:expr) => {
-                    if let Token::ElementStart { local, .. } = &token {
-                        if &**local == $tag_name {
-                            current_tag = Some($tag_name);
-                            continue;
-                        }
-                    }
-
-                    if let Token::Attribute { local, value, .. } = &token {
-                        if current_tag == Some($tag_name)
-                            && &**local == $attr_name
-                            && BAD_SCHEMAS.iter().all(|schema| !value.starts_with(schema))
-                        {
-                            sink(Link::Uses(UsedLink {
-                                href: self.join(check_anchors, value),
-                                path: self.path.clone(),
-                            }));
-                            continue;
-                        }
-                    }
-                };
-            }
-
-            macro_rules! extract_anchor_def {
-                ($tag_name:expr, $attr_name:expr) => {
-                    if check_anchors {
-                        if let Token::ElementStart { local, .. } = &token {
-                            if &**local == $tag_name {
-                                current_tag = Some($tag_name);
-                                continue;
+            match &token? {
+                Token::ElementStart { local, .. } => {
+                    current_tag = CurrentTag::from(&**local);
+                }
+                Token::ElementEnd { .. } => {
+                    current_tag = CurrentTag::None;
+                }
+                Token::Attribute { local, value, .. } => {
+                    macro_rules! extract_used_link {
+                        ($attr_name:expr) => {
+                            if &**local == $attr_name
+                                && BAD_SCHEMAS.iter().all(|schema| !value.starts_with(schema))
+                            {
+                                sink(Link::Uses(UsedLink {
+                                    href: self.join(check_anchors, value),
+                                    path: self.path.clone(),
+                                }));
                             }
-                        }
+                        };
+                    }
 
-                        if let Token::Attribute { local, value, .. } = &token {
-                            if current_tag == Some($tag_name) && &**local == $attr_name {
+                    macro_rules! extract_anchor_def {
+                        ($attr_name:expr) => {
+                            if check_anchors && &**local == $attr_name {
                                 sink(Link::Defines(
                                     self.join(check_anchors, &format!("#{}", value)),
                                 ));
-                                continue;
                             }
-                        }
+                        };
                     }
-                };
+
+                    match current_tag {
+                        CurrentTag::A => {
+                            extract_used_link!("href");
+                            extract_anchor_def!("name");
+                        }
+                        CurrentTag::Img => extract_used_link!("src"),
+                        CurrentTag::Link => extract_used_link!("href"),
+                        CurrentTag::Script => extract_used_link!("src"),
+                        CurrentTag::IFrame => extract_used_link!("src"),
+                        CurrentTag::Area => extract_used_link!("href"),
+                        CurrentTag::Object => extract_used_link!("data"),
+                        CurrentTag::None => {}
+                    }
+
+                    extract_anchor_def!("id");
+                }
+                _ => {}
             }
-
-            extract_used_link!("a", "href");
-            extract_used_link!("img", "src");
-            extract_used_link!("link", "href");
-            extract_used_link!("script", "src");
-            extract_used_link!("iframe", "src");
-            extract_used_link!("area", "href");
-            extract_used_link!("object", "data");
-
-            extract_anchor_def!("a", "name");
-            extract_anchor_def!("h1", "id");
-            extract_anchor_def!("h2", "id");
-            extract_anchor_def!("h3", "id");
-            extract_anchor_def!("h4", "id");
-            extract_anchor_def!("h5", "id");
-            extract_anchor_def!("h6", "id");
         }
 
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CurrentTag {
+    None,
+    A,
+    Img,
+    Link,
+    Script,
+    IFrame,
+    Area,
+    Object,
+}
+
+impl From<&str> for CurrentTag {
+    fn from(s: &str) -> CurrentTag {
+        match s {
+            "a" => CurrentTag::A,
+            "img" => CurrentTag::Img,
+            "link" => CurrentTag::Link,
+            "script" => CurrentTag::Script,
+            "iframe" => CurrentTag::IFrame,
+            "area" => CurrentTag::Area,
+            "object" => CurrentTag::Object,
+            _ => CurrentTag::None,
+        }
     }
 }
