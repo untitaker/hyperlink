@@ -43,6 +43,22 @@ cargo build --release
   anchors are considered warnings, meaning that `hyperlink` will `exit 2` if
   there are *only* broken anchors but no hard 404s.
 
+* `--sources`: A folder of markdown files that were the input for the HTML
+  `hyperlink` has to check. This is used to provide better error messages that
+  point at the actual file to edit. `hyperlink` does very simple content-based
+  matching to figure out which markdown files may have been involved in the
+  creation of a HTML file.
+
+  Why not just crawl and validate links in Markdown at this point? Answer:
+
+  * There are countless of proprietary extensions to markdown out there for
+    creating intra-page links that are generally not supported by link checking
+    tools.
+
+  * The structure of your markdown content does not necessarily match the
+    structure of your HTML (i.e. what the user actually sees). With this setup,
+    `hyperlink` does not have to assume anything about your build pipeline.
+
 ## Exit codes
 
 * `exit 1`: There have been errors (hard 404s)

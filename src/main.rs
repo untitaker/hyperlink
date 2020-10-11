@@ -1,16 +1,19 @@
 mod html;
+mod markdown;
+mod paragraph;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
 use std::path::PathBuf;
 use std::process;
+
+use anyhow::{anyhow, Context, Error};
+use markdown::DocumentSource;
+use rayon::prelude::*;
 use structopt::StructOpt;
 use walkdir::WalkDir;
 
-use anyhow::{anyhow, Context, Error};
-
 use html::{Document, Link};
-use rayon::prelude::*;
 
 #[derive(StructOpt)]
 #[structopt(name = "hyperlink")]
@@ -29,6 +32,10 @@ struct Cli {
     /// Whether to check for valid anchor references.
     #[structopt(long = "check-anchors")]
     check_anchors: bool,
+
+    /// Path to directory of markdown files to use for reporting errors.
+    #[structopt(long = "sources")]
+    sources_path: Option<PathBuf>,
 }
 
 fn main() -> Result<(), Error> {
@@ -36,6 +43,7 @@ fn main() -> Result<(), Error> {
         base_path,
         threads,
         check_anchors,
+        sources_path,
     } = Cli::from_args();
 
     if let Some(n) = threads {
@@ -44,8 +52,6 @@ fn main() -> Result<(), Error> {
             .build_global()
             .unwrap();
     }
-
-    let base_path = base_path.canonicalize()?;
 
     let mut file_hrefs = BTreeSet::new();
     let mut documents = Vec::new();
@@ -95,15 +101,16 @@ fn main() -> Result<(), Error> {
             || (BTreeMap::new(), BTreeSet::new()),
             |(mut used_links, mut defined_links), document| {
                 document
-                    .links(check_anchors, |link| match link {
+                    .links(check_anchors, sources_path.is_some(), |link| match link {
                         Link::Uses(used_link) => {
                             used_links
                                 .entry(used_link.href.clone())
                                 .or_insert_with(Vec::new)
                                 .push(used_link);
                         }
-                        Link::Defines(href) => {
-                            defined_links.insert(href);
+                        Link::Defines(defined_link) => {
+                            // XXX: Use whole DefinedLink
+                            defined_links.insert(defined_link.href);
                         }
                     })
                     .with_context(|| format!("Failed to read file {}", document.path.display()))?;
@@ -129,6 +136,64 @@ fn main() -> Result<(), Error> {
     let (used_links, mut defined_links) = extracted_links?;
     defined_links.extend(file_hrefs);
 
+    let mut paragraps_to_sourcefile = BTreeMap::new();
+
+    if let Some(ref sources_path) = sources_path {
+        println!("Discovering source files");
+
+        let mut file_count = 0;
+        let mut document_sources = Vec::new();
+
+        for entry in WalkDir::new(sources_path) {
+            file_count += 1;
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+            let file_type = metadata.file_type();
+
+            if !file_type.is_file() {
+                continue;
+            }
+
+            let source = DocumentSource::new(entry.path());
+
+            if source
+                .path
+                .extension()
+                .map_or(false, |extension| extension == "mdx" || extension == "md")
+            {
+                document_sources.push(source);
+            }
+        }
+
+        println!(
+            "Checking {} out of {} files in source folder",
+            document_sources.len(),
+            file_count
+        );
+
+        let results: Vec<_> = document_sources
+            .par_iter()
+            .map(|source| -> Result<_, Error> {
+                // XXX: Inefficient
+                let mut paragraphs = Vec::new();
+                source
+                    .paragraphs(|p| paragraphs.push(p))
+                    .with_context(|| format!("Failed to read file {}", source.path.display()))?;
+                Ok((source, paragraphs))
+            })
+            .collect();
+
+        for result in results {
+            let (source, paragraphs) = result?;
+            for paragraph in paragraphs {
+                paragraps_to_sourcefile
+                    .entry(paragraph)
+                    .or_insert_with(Vec::new)
+                    .push(source.clone());
+            }
+        }
+    }
+
     let used_links_len = used_links.len();
     let mut bad_links = 0;
     let mut bad_anchors = 0;
@@ -137,18 +202,26 @@ fn main() -> Result<(), Error> {
         if !defined_links.contains(&href) {
             let hard_404 = !check_anchors || !defined_links.contains(&href.without_anchor());
 
+            let expand_link_errors = |message| {
+                for link in &links {
+                    println!("{} {} at {}", message, href, link.path.display());
+
+                    if let Some(ref paragraph) = link.paragraph {
+                        if let Some(document_sources) = &paragraps_to_sourcefile.get(paragraph) {
+                            for source in *document_sources {
+                                println!("  source may be at {}", source.path.display());
+                            }
+                        }
+                    }
+                }
+            };
+
             if hard_404 {
                 bad_links += links.len();
-
-                for link in links {
-                    println!("ERROR: Bad link {} at {}", href, link.path.display());
-                }
+                expand_link_errors("ERROR: Bad link");
             } else {
                 bad_anchors += links.len();
-
-                for link in links {
-                    println!("WARNING: Bad anchor {} at {}", href, link.path.display());
-                }
+                expand_link_errors("WARNING: Bad anchor");
             }
         }
     }
