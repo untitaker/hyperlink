@@ -207,11 +207,16 @@ fn main() -> Result<(), Error> {
 
             let expand_link_errors = |message| {
                 'link: for link in &links {
-
                     if let Some(ref paragraph) = link.paragraph {
                         if let Some(document_sources) = &paragraps_to_sourcefile.get(paragraph) {
                             for source in *document_sources {
-                                println!("{} {} at {} (found in {})", message, href, source.path.display(), link.path.display());
+                                println!(
+                                    "{} {} at {} (found in {})",
+                                    message,
+                                    href,
+                                    source.path.display(),
+                                    link.path.display()
+                                );
                             }
                             continue 'link;
                         }
