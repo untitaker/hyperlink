@@ -254,7 +254,10 @@ fn main() -> Result<(), Error> {
 
         if github_actions {
             if !bad_links.is_empty() {
-                print!("::error file={}::bad links:", filepath.display());
+                print!(
+                    "::error file={}::bad links:",
+                    filepath.canonicalize()?.display()
+                );
                 for href in &bad_links {
                     // %0A -- escaped newline
                     //
@@ -265,7 +268,10 @@ fn main() -> Result<(), Error> {
             }
 
             if !bad_anchors.is_empty() {
-                print!("::error file={}::bad anchors:", filepath.display());
+                print!(
+                    "::error file={}::bad anchors:",
+                    filepath.canonicalize()?.display()
+                );
                 for href in &bad_anchors {
                     // %0A -- escaped newline
                     //
