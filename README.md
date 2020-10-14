@@ -15,6 +15,8 @@ Very fast link checker for static sites.
   concern for us. We are concerned about broken link in the page content, not
   the chrome around it.
 
+* Only supports UTF-8 encoded HTML files.
+
 * **Fast.** [docs.sentry.io](https://github.com/getsentry/sentry-docs) produces
   1.1 GB of HTML files. All [alternatives](#alternatives) we tried were too
   slow for this.

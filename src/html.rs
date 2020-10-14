@@ -1,9 +1,11 @@
 use std::fs;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::str;
 
 use anyhow::Error;
-use xmlparser::{ElementEnd, Token, Tokenizer};
+use quick_xml::events::Event;
+use quick_xml::Reader;
 
 use crate::paragraph::{Paragraph, ParagraphHasher};
 
@@ -11,7 +13,7 @@ static BAD_SCHEMAS: &[&str] = &[
     "http://", "https://", "irc://", "ftp://", "mailto:", "data:",
 ];
 
-static PARAGRAPH_TAGS: &[&str] = &["p", "li"];
+static PARAGRAPH_TAGS: &[&[u8]] = &[b"p", b"li"];
 
 #[inline]
 fn push_and_canonicalize(base: &mut String, path: &str) {
@@ -19,13 +21,13 @@ fn push_and_canonicalize(base: &mut String, path: &str) {
         base.clear();
     }
 
+    base.truncate(base.rfind('/').unwrap_or(0));
+
     for component in path.split('/') {
         match component {
             "" | "." => {}
             ".." => {
-                if let Some(i) = base.rfind('/') {
-                    base.truncate(i);
-                }
+                base.truncate(base.rfind('/').unwrap_or(0));
             }
             _ => {
                 if !base.is_empty() {
@@ -37,7 +39,31 @@ fn push_and_canonicalize(base: &mut String, path: &str) {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash, derive_more::Display, Ord, PartialOrd)]
+#[test]
+fn test_push_and_canonicalize() {
+    let mut base = "2019/".to_owned();
+    let path = "../feed.xml";
+    push_and_canonicalize(&mut base, path);
+    assert_eq!(base, "feed.xml");
+}
+
+#[test]
+fn test_push_and_canonicalize2() {
+    let mut base = "contact.html".to_owned();
+    let path = "contact.html";
+    push_and_canonicalize(&mut base, path);
+    assert_eq!(base, "contact.html");
+}
+
+#[test]
+fn test_push_and_canonicalize3() {
+    let mut base = "".to_owned();
+    let path = "./2014/article.html";
+    push_and_canonicalize(&mut base, path);
+    assert_eq!(base, "2014/article.html");
+}
+
+#[derive(Debug, Clone, derive_more::Display, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Href(String);
 
 impl Href {
@@ -52,14 +78,14 @@ impl Href {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct UsedLink {
     pub href: Href,
     pub path: PathBuf,
     pub paragraph: Option<Paragraph>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct DefinedLink {
     pub href: Href,
     pub paragraph: Option<Paragraph>,
@@ -73,6 +99,7 @@ pub enum Link {
 pub struct Document {
     pub path: PathBuf,
     pub href: Href,
+    pub is_index_html: bool,
 }
 
 impl Document {
@@ -82,14 +109,20 @@ impl Document {
             .expect("base_path is not a base of path")
             .to_owned();
 
-        if href_path.ends_with("index.html") || href_path.ends_with("index.htm") {
+        let is_index_html = href_path.ends_with("index.html") || href_path.ends_with("index.htm");
+
+        if is_index_html {
             href_path.pop();
         }
 
         let href = Href(href_path.display().to_string());
         let path = path.to_owned();
 
-        Document { path, href }
+        Document {
+            path,
+            href,
+            is_index_html,
+        }
     }
 
     fn join(&self, preserve_anchor: bool, rel_href: &str) -> Href {
@@ -99,6 +132,10 @@ impl Document {
         let anchor_start = rel_href.find('#').unwrap_or_else(|| rel_href.len());
 
         let mut href = self.href.0.clone();
+        if self.is_index_html {
+            href.push('/');
+        }
+
         push_and_canonicalize(&mut href, &rel_href[..qs_start]);
 
         if preserve_anchor {
@@ -117,17 +154,23 @@ impl Document {
         get_paragraphs: bool,
         mut sink: F,
     ) -> Result<(), Error> {
-        let text = fs::read_to_string(&self.path)?;
+        let mut reader = Reader::from_reader(BufReader::new(fs::File::open(&self.path)?));
+        reader.trim_text(true);
+        reader.expand_empty_elements(true);
+        reader.check_end_names(false);
 
-        let mut current_tag = CurrentTag::None;
+        // XXX: Move into threadlocal?
+        let mut buf = Vec::new();
+
         let mut hasher = ParagraphHasher::new();
         let mut pending_links = Vec::new();
         let mut in_paragraph = false;
 
-        for token in Tokenizer::from(text.as_str()) {
-            match &token? {
-                Token::ElementStart { local, .. } => {
-                    if PARAGRAPH_TAGS.contains(&&**local) {
+        loop {
+            match reader.read_event(&mut buf)? {
+                Event::Eof => break,
+                Event::Start(ref e) => {
+                    if PARAGRAPH_TAGS.contains(&e.name()) {
                         in_paragraph = true;
 
                         for link in pending_links.drain(..) {
@@ -135,73 +178,84 @@ impl Document {
                         }
                     }
 
-                    current_tag = CurrentTag::from(&**local);
-                }
-                Token::ElementEnd { end, .. } if get_paragraphs => {
-                    if let ElementEnd::Close(_, tag_name) = end {
-                        if PARAGRAPH_TAGS.contains(&&**tag_name) {
-                            let paragraph = hasher.finish_paragraph();
-                            for mut link in pending_links.drain(..) {
-                                match link {
-                                    Link::Defines(ref mut x) => {
-                                        x.paragraph = Some(paragraph);
-                                    }
-                                    Link::Uses(ref mut x) => {
-                                        x.paragraph = Some(paragraph);
-                                    }
-                                }
-                                sink(link);
-                            }
-                            in_paragraph = false;
-                        }
-                    }
-
-                    current_tag = CurrentTag::None;
-                }
-                Token::Attribute { local, value, .. } => {
                     macro_rules! extract_used_link {
                         ($attr_name:expr) => {
-                            if &**local == $attr_name
-                                && BAD_SCHEMAS.iter().all(|schema| !value.starts_with(schema))
-                            {
-                                pending_links.push(Link::Uses(UsedLink {
-                                    href: self.join(check_anchors, value),
-                                    path: self.path.clone(),
-                                    paragraph: None,
-                                }));
+                            for attr in e.html_attributes() {
+                                let attr = attr?;
+
+                                if attr.key == $attr_name.as_bytes()
+                                    && BAD_SCHEMAS
+                                        .iter()
+                                        .all(|schema| !attr.value.starts_with(schema.as_bytes()))
+                                {
+                                    pending_links.push(Link::Uses(UsedLink {
+                                        href: self.join(
+                                            check_anchors,
+                                            str::from_utf8(&attr.unescaped_value()?)?,
+                                        ),
+                                        path: self.path.clone(),
+                                        paragraph: None,
+                                    }));
+                                }
                             }
                         };
                     }
 
                     macro_rules! extract_anchor_def {
                         ($attr_name:expr) => {
-                            if check_anchors && &**local == $attr_name {
-                                pending_links.push(Link::Defines(DefinedLink {
-                                    href: self.join(check_anchors, &format!("#{}", value)),
-                                    paragraph: None,
-                                }));
+                            if check_anchors {
+                                for attr in e.html_attributes() {
+                                    let attr = attr?;
+
+                                    if attr.key == $attr_name.as_bytes() {
+                                        pending_links.push(Link::Defines(DefinedLink {
+                                            href: self.join(
+                                                check_anchors,
+                                                &format!("#{}", str::from_utf8(&attr.value)?),
+                                            ),
+                                            paragraph: None,
+                                        }));
+                                    }
+                                }
                             }
                         };
                     }
 
-                    match current_tag {
-                        CurrentTag::A => {
+                    match e.name() {
+                        b"a" => {
                             extract_used_link!("href");
                             extract_anchor_def!("name");
                         }
-                        CurrentTag::Img => extract_used_link!("src"),
-                        CurrentTag::Link => extract_used_link!("href"),
-                        CurrentTag::Script => extract_used_link!("src"),
-                        CurrentTag::IFrame => extract_used_link!("src"),
-                        CurrentTag::Area => extract_used_link!("href"),
-                        CurrentTag::Object => extract_used_link!("data"),
-                        CurrentTag::None => {}
+                        b"img" => extract_used_link!("src"),
+                        b"link" => extract_used_link!("href"),
+                        b"script" => extract_used_link!("src"),
+                        b"iframe" => extract_used_link!("src"),
+                        b"area" => extract_used_link!("href"),
+                        b"object" => extract_used_link!("data"),
+                        _ => {}
                     }
 
                     extract_anchor_def!("id");
                 }
-                Token::Text { text } if get_paragraphs && in_paragraph => {
-                    hasher.update(text);
+                Event::End(e) if get_paragraphs => {
+                    if PARAGRAPH_TAGS.contains(&e.name()) {
+                        let paragraph = hasher.finish_paragraph();
+                        for mut link in pending_links.drain(..) {
+                            match link {
+                                Link::Defines(ref mut x) => {
+                                    x.paragraph = Some(paragraph);
+                                }
+                                Link::Uses(ref mut x) => {
+                                    x.paragraph = Some(paragraph);
+                                }
+                            }
+                            sink(link);
+                        }
+                        in_paragraph = false;
+                    }
+                }
+                Event::Text(e) if get_paragraphs && in_paragraph => {
+                    hasher.update(str::from_utf8(&e.unescaped()?)?);
                 }
                 _ => {}
             }
@@ -212,32 +266,5 @@ impl Document {
         }
 
         Ok(())
-    }
-}
-
-#[derive(Clone, Copy)]
-enum CurrentTag {
-    None,
-    A,
-    Img,
-    Link,
-    Script,
-    IFrame,
-    Area,
-    Object,
-}
-
-impl From<&str> for CurrentTag {
-    fn from(s: &str) -> CurrentTag {
-        match s {
-            "a" => CurrentTag::A,
-            "img" => CurrentTag::Img,
-            "link" => CurrentTag::Link,
-            "script" => CurrentTag::Script,
-            "iframe" => CurrentTag::IFrame,
-            "area" => CurrentTag::Area,
-            "object" => CurrentTag::Object,
-            _ => CurrentTag::None,
-        }
     }
 }
