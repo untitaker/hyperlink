@@ -200,64 +200,96 @@ fn main() -> Result<(), Error> {
     }
 
     let used_links_len = used_links.len();
-    let mut bad_links = 0;
-    let mut bad_anchors = 0;
+    let mut bad_links_and_anchors = BTreeMap::new();
+    let mut bad_links_count = 0;
+    let mut bad_anchors_count = 0;
 
     for (href, links) in used_links {
         if !defined_links.contains(&href) {
             let hard_404 = !check_anchors || !defined_links.contains(&href.without_anchor());
+            if hard_404 {
+                bad_links_count += 1;
+            } else {
+                bad_anchors_count += 1;
+            }
 
-            let expand_link_errors = |message| -> Result<_, Error> {
-                for link in &links {
-                    println!("{} {} at {}", message, href, link.path.display());
+            for link in links {
+                let mut had_sources = false;
 
-                    if let Some(ref paragraph) = link.paragraph {
-                        if let Some(document_sources) = &paragraps_to_sourcefile.get(paragraph) {
-                            for source in *document_sources {
-                                println!("  source may be at {}", source.path.display());
-                                if github_actions {
-                                    println!(
-                                        "::error file={}::{} {}",
-                                        source.path.canonicalize()?.display(),
-                                        message,
-                                        href
-                                    );
-                                }
-                            }
+                if let Some(ref paragraph) = link.paragraph {
+                    if let Some(document_sources) = &paragraps_to_sourcefile.get(paragraph) {
+                        debug_assert!(!document_sources.is_empty());
+                        had_sources = true;
+
+                        for source in *document_sources {
+                            let (bad_links, bad_anchors) = bad_links_and_anchors
+                                .entry(source.path.clone())
+                                .or_insert_with(|| (Vec::new(), Vec::new()));
+
+                            if hard_404 { bad_links } else { bad_anchors }.push(href.clone());
                         }
                     }
                 }
 
-                Ok(())
-            };
+                if !had_sources {
+                    let (bad_links, bad_anchors) = bad_links_and_anchors
+                        .entry(link.path)
+                        .or_insert_with(|| (Vec::new(), Vec::new()));
 
-            if hard_404 {
-                bad_links += links.len();
-                expand_link_errors("ERROR: Bad link")?;
-            } else {
-                bad_anchors += links.len();
-                expand_link_errors("WARNING: Bad anchor")?;
+                    if hard_404 { bad_links } else { bad_anchors }.push(href.clone());
+                }
             }
         }
     }
 
+    for (filepath, (bad_links, bad_anchors)) in bad_links_and_anchors {
+        println!("{}", filepath.display());
+        for href in &bad_links {
+            println!("  error: bad link {}", href);
+        }
+
+        for href in &bad_anchors {
+            println!("  warning: bad anchor {}", href);
+        }
+
+        if github_actions {
+            if !bad_links.is_empty() {
+                print!("::error file={}::bad links:", filepath.display());
+                for href in &bad_links {
+                    print!("\\n* `{}`", href);
+                }
+                println!();
+            }
+
+            if !bad_anchors.is_empty() {
+                print!("::warning file={}::bad anchors:", filepath.display());
+                for href in &bad_anchors {
+                    print!("\\n* `{}`", href);
+                }
+                println!();
+            }
+        }
+
+        println!();
+    }
+
     println!("Checked {} links", used_links_len);
     println!("Checked {} files", documents.len());
-    println!("Found {} bad links", bad_links);
+    println!("Found {} bad links", bad_links_count);
 
     if check_anchors {
-        println!("Found {} bad anchors", bad_anchors);
+        println!("Found {} bad anchors", bad_anchors_count);
     }
 
     // We're about to exit the program and leaking the memory is faster than running drop
     mem::forget(defined_links);
     mem::forget(documents);
 
-    if bad_links > 0 {
+    if bad_links_count > 0 {
         process::exit(1);
     }
 
-    if bad_anchors > 0 {
+    if bad_anchors_count > 0 {
         process::exit(2);
     }
 
