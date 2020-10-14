@@ -46,9 +46,6 @@ fn main() -> Result<(), Error> {
         sources_path,
     } = Cli::from_args();
 
-    let base_path = base_path.canonicalize()?;
-    let sources_path = sources_path.map(|x| x.canonicalize()).transpose()?;
-
     if let Some(n) = threads {
         rayon::ThreadPoolBuilder::new()
             .num_threads(n)
