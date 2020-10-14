@@ -181,7 +181,7 @@ impl Document {
                             for attr in e.html_attributes() {
                                 let attr = attr?;
 
-                                if attr.key == $attr_name.as_bytes()
+                                if attr.key == $attr_name
                                     && BAD_SCHEMAS
                                         .iter()
                                         .all(|schema| !attr.value.starts_with(schema.as_bytes()))
@@ -205,7 +205,7 @@ impl Document {
                                 for attr in e.html_attributes() {
                                     let attr = attr?;
 
-                                    if attr.key == $attr_name.as_bytes() {
+                                    if attr.key == $attr_name {
                                         pending_links.push(Link::Defines(DefinedLink {
                                             href: self.join(
                                                 check_anchors,
@@ -221,19 +221,19 @@ impl Document {
 
                     match e.name() {
                         b"a" => {
-                            extract_used_link!("href");
-                            extract_anchor_def!("name");
+                            extract_used_link!(b"href");
+                            extract_anchor_def!(b"name");
                         }
-                        b"img" => extract_used_link!("src"),
-                        b"link" => extract_used_link!("href"),
-                        b"script" => extract_used_link!("src"),
-                        b"iframe" => extract_used_link!("src"),
-                        b"area" => extract_used_link!("href"),
-                        b"object" => extract_used_link!("data"),
+                        b"img" => extract_used_link!(b"src"),
+                        b"link" => extract_used_link!(b"href"),
+                        b"script" => extract_used_link!(b"src"),
+                        b"iframe" => extract_used_link!(b"src"),
+                        b"area" => extract_used_link!(b"href"),
+                        b"object" => extract_used_link!(b"data"),
                         _ => {}
                     }
 
-                    extract_anchor_def!("id");
+                    extract_anchor_def!(b"id");
                 }
                 Event::End(e) if get_paragraphs => {
                     if PARAGRAPH_TAGS.contains(&e.name()) {
