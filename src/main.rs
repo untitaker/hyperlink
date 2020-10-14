@@ -203,23 +203,16 @@ fn main() -> Result<(), Error> {
             let hard_404 = !check_anchors || !defined_links.contains(&href.without_anchor());
 
             let expand_link_errors = |message| {
-                'link: for link in &links {
+                for link in &links {
+                    println!("{} {} at {}", message, href, link.path.display());
+
                     if let Some(ref paragraph) = link.paragraph {
                         if let Some(document_sources) = &paragraps_to_sourcefile.get(paragraph) {
                             for source in *document_sources {
-                                println!(
-                                    "{} {} at {} (found in {})",
-                                    message,
-                                    href,
-                                    source.path.display(),
-                                    link.path.display()
-                                );
+                                println!("  source may be at {}", source.path.display());
                             }
-                            continue 'link;
                         }
                     }
-
-                    println!("{} {} at {}", message, href, link.path.display());
                 }
             };
 
