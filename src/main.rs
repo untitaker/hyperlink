@@ -13,7 +13,7 @@ use rayon::prelude::*;
 use structopt::StructOpt;
 use walkdir::WalkDir;
 
-use html::{Document, Link};
+use html::{Document, Href, Link};
 
 #[derive(StructOpt)]
 #[structopt(name = "hyperlink")]
@@ -223,7 +223,7 @@ fn main() -> Result<(), Error> {
 
                         for source in *document_sources {
                             let (bad_links, bad_anchors) = bad_links_and_anchors
-                                .entry(source.path.clone())
+                                .entry((!had_sources, source.path.clone()))
                                 .or_insert_with(|| (Vec::new(), Vec::new()));
 
                             if hard_404 { bad_links } else { bad_anchors }.push(href.clone());
@@ -233,7 +233,7 @@ fn main() -> Result<(), Error> {
 
                 if !had_sources {
                     let (bad_links, bad_anchors) = bad_links_and_anchors
-                        .entry(link.path)
+                        .entry((!had_sources, link.path))
                         .or_insert_with(|| (Vec::new(), Vec::new()));
 
                     if hard_404 { bad_links } else { bad_anchors }.push(href.clone());
@@ -242,8 +242,13 @@ fn main() -> Result<(), Error> {
         }
     }
 
-    for (filepath, (bad_links, bad_anchors)) in bad_links_and_anchors {
+    // _is_raw_file is an unused parameter that is only there to control iteration order over keys.
+    // Sort markdown files to the start since otherwise the less valuable annotations on not
+    // checked in files fill up the limit on annotations (tested manually, seems to be 10 right
+    // now).
+    for ((_is_raw_file, filepath), (bad_links, bad_anchors)) in bad_links_and_anchors {
         println!("{}", filepath.display());
+
         for href in &bad_links {
             println!("  error: bad link {}", href);
         }
@@ -258,12 +263,7 @@ fn main() -> Result<(), Error> {
                     "::error file={}::bad links:",
                     filepath.canonicalize()?.display()
                 );
-                for href in &bad_links {
-                    // %0A -- escaped newline
-                    //
-                    // https://github.community/t/what-is-the-correct-character-escaping-for-workflow-command-values-e-g-echo-xxxx/118465/5
-                    print!("%0A  {}", href);
-                }
+                print_github_actions_href_list(&bad_links);
                 println!();
             }
 
@@ -272,12 +272,8 @@ fn main() -> Result<(), Error> {
                     "::error file={}::bad anchors:",
                     filepath.canonicalize()?.display()
                 );
-                for href in &bad_anchors {
-                    // %0A -- escaped newline
-                    //
-                    // https://github.community/t/what-is-the-correct-character-escaping-for-workflow-command-values-e-g-echo-xxxx/118465/5
-                    print!("%0A  {}", href);
-                }
+
+                print_github_actions_href_list(&bad_anchors);
                 println!();
             }
         }
@@ -306,4 +302,13 @@ fn main() -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+fn print_github_actions_href_list(hrefs: &[Href]) {
+    for href in hrefs {
+        // %0A -- escaped newline
+        //
+        // https://github.community/t/what-is-the-correct-character-escaping-for-workflow-command-values-e-g-echo-xxxx/118465/5
+        print!("%0A  {}", href);
+    }
 }
