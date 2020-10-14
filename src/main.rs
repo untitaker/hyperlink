@@ -264,7 +264,10 @@ fn main() -> Result<(), Error> {
             if !bad_anchors.is_empty() {
                 print!("::warning file={}::bad anchors:", filepath.display());
                 for href in &bad_anchors {
-                    print!("\\n* `{}`", href);
+                    // %0A -- escaped newline
+                    //
+                    // https://github.community/t/what-is-the-correct-character-escaping-for-workflow-command-values-e-g-echo-xxxx/118465/5
+                    print!("%0A  {}", href);
                 }
                 println!();
             }
