@@ -90,6 +90,10 @@ cargo build --release
   tokenizer from there, but does not share any code with it. We haven't been
   able to get Legend of Link running at all.
 
+* [htmltest](https://github.com/wjdp/htmltest) has comparable speed (after
+  disabling most checks to ensure feature parity with `hyperlink`), however is
+  still slightly slower than `hyperlink` in single-threaded mode (`-j 1`)
+
 ## License
 
 Licensed under the MIT, see [`./LICENSE`](./LICENSE).
