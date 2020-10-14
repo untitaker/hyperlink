@@ -6,6 +6,9 @@ use pulldown_cmark::{Event, Parser, Tag};
 
 use crate::paragraph::{Paragraph, ParagraphHasher};
 
+// Note: Keep in sync with html.rs
+static PARAGRAPH_TAGS: &[Tag<'_>] = &[Tag::Paragraph, Tag::Item];
+
 #[derive(Clone)]
 pub struct DocumentSource {
     pub path: PathBuf,
@@ -26,10 +29,10 @@ impl DocumentSource {
 
         for event in Parser::new(&text) {
             match event {
-                Event::Start(Tag::Paragraph) => {
+                Event::Start(tag) if PARAGRAPH_TAGS.contains(&tag) => {
                     in_paragraph = true;
                 }
-                Event::End(Tag::Paragraph) => {
+                Event::End(tag) if PARAGRAPH_TAGS.contains(&tag) => {
                     sink(hasher.finish_paragraph());
                     in_paragraph = false;
                 }

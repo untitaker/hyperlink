@@ -11,6 +11,8 @@ static BAD_SCHEMAS: &[&str] = &[
     "http://", "https://", "irc://", "ftp://", "mailto:", "data:",
 ];
 
+static PARAGRAPH_TAGS: &[&str] = &["p", "li"];
+
 #[inline]
 fn push_and_canonicalize(base: &mut String, path: &str) {
     if path.starts_with('/') {
@@ -118,14 +120,14 @@ impl Document {
         let text = fs::read_to_string(&self.path)?;
 
         let mut current_tag = CurrentTag::None;
-        let mut in_paragraph = false;
         let mut hasher = ParagraphHasher::new();
         let mut pending_links = Vec::new();
+        let mut in_paragraph = false;
 
         for token in Tokenizer::from(text.as_str()) {
             match &token? {
                 Token::ElementStart { local, .. } => {
-                    if &**local == "p" {
+                    if PARAGRAPH_TAGS.contains(&&**local) {
                         in_paragraph = true;
 
                         for link in pending_links.drain(..) {
@@ -137,7 +139,7 @@ impl Document {
                 }
                 Token::ElementEnd { end, .. } if get_paragraphs => {
                     if let ElementEnd::Close(_, tag_name) = end {
-                        if &**tag_name == "p" {
+                        if PARAGRAPH_TAGS.contains(&&**tag_name) {
                             let paragraph = hasher.finish_paragraph();
                             for mut link in pending_links.drain(..) {
                                 match link {
