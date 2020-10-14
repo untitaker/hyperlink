@@ -265,7 +265,7 @@ fn main() -> Result<(), Error> {
             }
 
             if !bad_anchors.is_empty() {
-                print!("::warning file={}::bad anchors:", filepath.display());
+                print!("::error file={}::bad anchors:", filepath.display());
                 for href in &bad_anchors {
                     // %0A -- escaped newline
                     //
