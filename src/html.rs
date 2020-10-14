@@ -150,6 +150,7 @@ impl Document {
 
     pub fn links<F: FnMut(Link)>(
         &self,
+        buf: &mut Vec<u8>,
         check_anchors: bool,
         get_paragraphs: bool,
         mut sink: F,
@@ -159,15 +160,12 @@ impl Document {
         reader.expand_empty_elements(true);
         reader.check_end_names(false);
 
-        // XXX: Move into threadlocal?
-        let mut buf = Vec::new();
-
         let mut hasher = ParagraphHasher::new();
         let mut pending_links = Vec::new();
         let mut in_paragraph = false;
 
         loop {
-            match reader.read_event(&mut buf)? {
+            match reader.read_event(buf)? {
                 Event::Eof => break,
                 Event::Start(ref e) => {
                     if PARAGRAPH_TAGS.contains(&e.name()) {
@@ -264,6 +262,8 @@ impl Document {
         for link in pending_links {
             sink(link);
         }
+
+        buf.clear();
 
         Ok(())
     }

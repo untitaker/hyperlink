@@ -58,7 +58,7 @@ fn main() -> Result<(), Error> {
             .unwrap();
     }
 
-    let mut file_hrefs = BTreeSet::new();
+    let mut defined_links = BTreeSet::new();
     let mut documents = Vec::new();
 
     println!("Discovering files");
@@ -81,7 +81,7 @@ fn main() -> Result<(), Error> {
 
         let document = Document::new(&base_path, entry.path());
 
-        if !file_hrefs.insert(document.href.clone()) {
+        if !defined_links.insert(document.href.clone()) {
             panic!("Found two files that would probably serve the same href. One of them is {}. Please file a bug with the output of 'find' on your folder.", entry.path().display());
         }
 
@@ -97,49 +97,43 @@ fn main() -> Result<(), Error> {
     println!(
         "Checking {} out of {} files",
         documents.len(),
-        file_hrefs.len()
+        defined_links.len()
     );
 
-    let extracted_links: Result<_, Error> = documents
+    let links_result: Result<_, Error> = documents
         .par_iter()
-        .try_fold(
-            || (BTreeMap::new(), BTreeSet::new()),
-            |(mut used_links, mut defined_links), document| {
-                document
-                    .links(check_anchors, sources_path.is_some(), |link| match link {
-                        Link::Uses(used_link) => {
-                            used_links
-                                .entry(used_link.href.clone())
-                                .or_insert_with(Vec::new)
-                                .push(used_link);
-                        }
-                        Link::Defines(defined_link) => {
-                            // XXX: Use whole DefinedLink
-                            defined_links.insert(defined_link.href);
-                        }
-                    })
-                    .with_context(|| format!("Failed to read file {}", document.path.display()))?;
+        .map_init(Vec::new, |buf, document| {
+            let mut links = Vec::new();
 
-                Ok((used_links, defined_links))
-            },
-        )
-        .try_reduce(
-            || (BTreeMap::new(), BTreeSet::new()),
-            |(mut used_links, mut defined_links), (used_links2, defined_links2)| {
-                for (href, links) in used_links2 {
-                    used_links
-                        .entry(href)
-                        .or_insert_with(Vec::new)
-                        .extend(links);
-                }
+            document
+                .links(buf, check_anchors, sources_path.is_some(), |link| {
+                    links.push(link)
+                })
+                .with_context(|| format!("Failed to read file {}", document.path.display()))?;
 
-                defined_links.extend(defined_links2);
-                Ok((used_links, defined_links))
-            },
-        );
+            Ok(links)
+        })
+        .try_reduce(Vec::new, |mut links, links2| {
+            links.extend(links2);
+            Ok(links)
+        });
 
-    let (used_links, mut defined_links) = extracted_links?;
-    defined_links.extend(file_hrefs);
+    let mut used_links = BTreeMap::new();
+
+    for link in links_result? {
+        match link {
+            Link::Uses(used_link) => {
+                used_links
+                    .entry(used_link.href.clone())
+                    .or_insert_with(Vec::new)
+                    .push(used_link);
+            }
+            Link::Defines(defined_link) => {
+                // XXX: Use whole link
+                defined_links.insert(defined_link.href);
+            }
+        }
+    }
 
     let mut paragraps_to_sourcefile = BTreeMap::new();
 
