@@ -21,9 +21,9 @@ Very fast link checker for static sites.
 
   `hyperlink` handles this amount of data in 4 seconds on a MacBook Pro 2018.
 
-* **Pay for what you need.** By default, `hyperlink` checks for *real* 404s in
-  HTML only. Anything beyond that is opt-in, such as finding broken anchors or
-  future features like parsing of CSS/JS. See [Options](#options).
+* **Pay for what you need.** By default, `hyperlink` checks for hard 404s in
+  internal links only. Anything beyond that is opt-in. See [Options](#options)
+  for a list of features to enable.
 
 ## Usage
 
@@ -35,6 +35,9 @@ cargo build --release
 ```
 
 ## Options
+
+When invoked without options, `hyperlink` only checks for 404s of internal
+links. However, it can do more.
 
 * `-j/--jobs`: How many threads to spawn for parsing HTML. By default
   `hyperlink` will attempt to saturate your CPU.
