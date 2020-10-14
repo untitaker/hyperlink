@@ -36,6 +36,10 @@ struct Cli {
     /// Path to directory of markdown files to use for reporting errors.
     #[structopt(long = "sources")]
     sources_path: Option<PathBuf>,
+
+    /// Enable specialized output for GitHub actions.
+    #[structopt(long = "github-actions")]
+    github_actions: bool,
 }
 
 fn main() -> Result<(), Error> {
@@ -44,6 +48,7 @@ fn main() -> Result<(), Error> {
         threads,
         check_anchors,
         sources_path,
+        github_actions,
     } = Cli::from_args();
 
     if let Some(n) = threads {
@@ -202,7 +207,7 @@ fn main() -> Result<(), Error> {
         if !defined_links.contains(&href) {
             let hard_404 = !check_anchors || !defined_links.contains(&href.without_anchor());
 
-            let expand_link_errors = |message| {
+            let expand_link_errors = |message| -> Result<_, Error> {
                 for link in &links {
                     println!("{} {} at {}", message, href, link.path.display());
 
@@ -210,18 +215,28 @@ fn main() -> Result<(), Error> {
                         if let Some(document_sources) = &paragraps_to_sourcefile.get(paragraph) {
                             for source in *document_sources {
                                 println!("  source may be at {}", source.path.display());
+                                if github_actions {
+                                    println!(
+                                        "::error file={}::{} {}",
+                                        source.path.canonicalize()?.display(),
+                                        message,
+                                        href
+                                    );
+                                }
                             }
                         }
                     }
                 }
+
+                Ok(())
             };
 
             if hard_404 {
                 bad_links += links.len();
-                expand_link_errors("ERROR: Bad link");
+                expand_link_errors("ERROR: Bad link")?;
             } else {
                 bad_anchors += links.len();
-                expand_link_errors("WARNING: Bad anchor");
+                expand_link_errors("WARNING: Bad anchor")?;
             }
         }
     }

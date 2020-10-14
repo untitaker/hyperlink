@@ -59,6 +59,10 @@ cargo build --release
     structure of your HTML (i.e. what the user actually sees). With this setup,
     `hyperlink` does not have to assume anything about your build pipeline.
 
+* `--github-actions`: Emit [GitHub actions
+  errors](https://docs.github.com/en/free-pro-team@latest/actions/reference/workflow-commands-for-github-actions#setting-an-error-message).
+  This only has an effect with `--sources` set.
+
 ## Exit codes
 
 * `exit 1`: There have been errors (hard 404s)
