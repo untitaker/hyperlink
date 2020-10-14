@@ -73,11 +73,10 @@ links. However, it can do more.
 
 ## Alternatives
 
-* [linkcheck](https://github.com/filiph/linkcheck) is definitely one of the
-  faster linkcheckers out there, has great UX and a good set of features (more
-  than hyperlink). Other than performance it worked really well for our
-  usecase, and `hyperlink` takes some minor UX decisions from linkchecker here
-  and there.
+* [linkcheck](https://github.com/filiph/linkcheck) has slightly above-average
+  performance, great UX and a good set of features (more than hyperlink). Other
+  than performance it worked really well for our usecase, and `hyperlink` takes
+  some minor UX decisions from linkchecker here and there.
 
   We tried `linkcheck` together with
   [`http-server`](https://www.npmjs.com/package/http-server) on localhost,
@@ -93,9 +92,10 @@ links. However, it can do more.
   tokenizer from there, but does not share any code with it. We haven't been
   able to get Legend of Link running at all.
 
-* [htmltest](https://github.com/wjdp/htmltest) has comparable speed (after
-  disabling most checks to ensure feature parity with `hyperlink`), however is
-  still slightly slower than `hyperlink` in single-threaded mode (`-j 1`)
+* [htmltest](https://github.com/wjdp/htmltest) is one of the fastest
+  linkcheckers we've tried (after disabling most checks to ensure feature
+  parity with `hyperlink`), however is still slower than `hyperlink` in
+  single-threaded mode (`-j 1`)
 
 ## License
 
