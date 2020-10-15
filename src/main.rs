@@ -79,10 +79,10 @@ fn main() -> Result<(), Error> {
             continue;
         }
 
-        let document = Document::new(&base_path, entry.path());
+        let document = Document::new(&base_path, entry.into_path());
 
         if !defined_links.insert(document.href.clone()) {
-            panic!("Found two files that would probably serve the same href. One of them is {}. Please file a bug with the output of 'find' on your folder.", entry.path().display());
+            panic!("Found two files that would probably serve the same href. One of them is {}. Please file a bug with the output of 'find' on your folder.", document.path.display());
         }
 
         if document
@@ -153,7 +153,7 @@ fn main() -> Result<(), Error> {
                 continue;
             }
 
-            let source = DocumentSource::new(entry.path());
+            let source = DocumentSource::new(entry.into_path());
 
             if source
                 .path
@@ -217,7 +217,7 @@ fn main() -> Result<(), Error> {
 
                         for source in *document_sources {
                             let (bad_links, bad_anchors) = bad_links_and_anchors
-                                .entry((!had_sources, source.path.clone()))
+                                .entry((!had_sources, source.path.as_path()))
                                 .or_insert_with(|| (Vec::new(), Vec::new()));
 
                             if hard_404 { bad_links } else { bad_anchors }.push(href.clone());

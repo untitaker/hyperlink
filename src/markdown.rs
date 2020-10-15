@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Error;
 use pulldown_cmark::{Event, Parser, Tag};
@@ -15,13 +15,11 @@ pub struct DocumentSource {
 }
 
 impl DocumentSource {
-    pub fn new(path: &Path) -> Self {
-        DocumentSource {
-            path: path.to_owned(),
-        }
+    pub fn new(path: PathBuf) -> Self {
+        DocumentSource { path }
     }
 
-    pub fn paragraphs<F: FnMut(Paragraph)>(&self, mut sink: F) -> Result<(), Error> {
+    pub fn paragraphs(&self, mut sink: impl FnMut(Paragraph)) -> Result<(), Error> {
         let text = fs::read_to_string(&self.path)?;
 
         let mut in_paragraph = false;

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fs;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -41,7 +42,7 @@ fn push_and_canonicalize(base: &mut String, path: &str) {
 
 #[test]
 fn test_push_and_canonicalize() {
-    let mut base = "2019/".to_owned();
+    let mut base = "2019/".into();
     let path = "../feed.xml";
     push_and_canonicalize(&mut base, path);
     assert_eq!(base, "feed.xml");
@@ -49,7 +50,7 @@ fn test_push_and_canonicalize() {
 
 #[test]
 fn test_push_and_canonicalize2() {
-    let mut base = "contact.html".to_owned();
+    let mut base = "contact.html".into();
     let path = "contact.html";
     push_and_canonicalize(&mut base, path);
     assert_eq!(base, "contact.html");
@@ -57,66 +58,64 @@ fn test_push_and_canonicalize2() {
 
 #[test]
 fn test_push_and_canonicalize3() {
-    let mut base = "".to_owned();
+    let mut base = "".into();
     let path = "./2014/article.html";
     push_and_canonicalize(&mut base, path);
     assert_eq!(base, "2014/article.html");
 }
 
 #[derive(Debug, Clone, derive_more::Display, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Href(String);
+pub struct Href<'a>(Cow<'a, str>);
 
-impl Href {
-    pub fn without_anchor(&self) -> Href {
-        let mut s = self.0.clone();
+impl<'a> Href<'a> {
+    pub fn without_anchor(&self) -> Href<'_> {
+        let mut s = &self.0[..];
 
         if let Some(i) = s.find('#') {
-            s.truncate(i);
+            s = &s[..i];
         }
 
-        Href(s)
+        Href(s.into())
     }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct UsedLink {
-    pub href: Href,
-    pub path: PathBuf,
+pub struct UsedLink<'a> {
+    pub href: Href<'a>,
+    pub path: &'a Path,
     pub paragraph: Option<Paragraph>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct DefinedLink {
-    pub href: Href,
+pub struct DefinedLink<'a> {
+    pub href: Href<'a>,
     pub paragraph: Option<Paragraph>,
 }
 
-pub enum Link {
-    Uses(UsedLink),
-    Defines(DefinedLink),
+pub enum Link<'a> {
+    Uses(UsedLink<'a>),
+    Defines(DefinedLink<'a>),
 }
 
 pub struct Document {
     pub path: PathBuf,
-    pub href: Href,
+    pub href: Href<'static>,
     pub is_index_html: bool,
 }
 
 impl Document {
-    pub fn new(base_path: &Path, path: &Path) -> Self {
+    pub fn new(base_path: &Path, path: PathBuf) -> Self {
         let mut href_path = path
             .strip_prefix(base_path)
-            .expect("base_path is not a base of path")
-            .to_owned();
+            .expect("base_path is not a base of path");
 
         let is_index_html = href_path.ends_with("index.html") || href_path.ends_with("index.htm");
 
         if is_index_html {
-            href_path.pop();
+            href_path = href_path.parent().unwrap_or(href_path);
         }
 
-        let href = Href(href_path.display().to_string());
-        let path = path.to_owned();
+        let href = Href(href_path.display().to_string().into());
 
         Document {
             path,
@@ -125,13 +124,13 @@ impl Document {
         }
     }
 
-    fn join(&self, preserve_anchor: bool, rel_href: &str) -> Href {
+    fn join(&self, preserve_anchor: bool, rel_href: &str) -> Href<'_> {
         let qs_start = rel_href
             .find(&['?', '#'][..])
             .unwrap_or_else(|| rel_href.len());
         let anchor_start = rel_href.find('#').unwrap_or_else(|| rel_href.len());
 
-        let mut href = self.href.0.clone();
+        let mut href = self.href.0.clone().into_owned();
         if self.is_index_html {
             href.push('/');
         }
@@ -145,15 +144,15 @@ impl Document {
             }
         }
 
-        Href(href)
+        Href(href.into())
     }
 
-    pub fn links<F: FnMut(Link)>(
-        &self,
+    pub fn links<'a>(
+        &'a self,
         buf: &mut Vec<u8>,
         check_anchors: bool,
         get_paragraphs: bool,
-        mut sink: F,
+        mut sink: impl FnMut(Link<'a>),
     ) -> Result<(), Error> {
         let mut reader = Reader::from_reader(BufReader::new(fs::File::open(&self.path)?));
         reader.trim_text(true);
@@ -191,7 +190,7 @@ impl Document {
                                             check_anchors,
                                             str::from_utf8(&attr.unescaped_value()?)?,
                                         ),
-                                        path: self.path.clone(),
+                                        path: &self.path,
                                         paragraph: None,
                                     }));
                                 }
