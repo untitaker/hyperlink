@@ -103,12 +103,8 @@ fn main() -> Result<(), Error> {
     let links_result: Result<_, Error> = documents
         .par_iter()
         .map_init(Vec::new, |buf, document| {
-            let mut links = Vec::new();
-
-            document
-                .links(buf, check_anchors, sources_path.is_some(), |link| {
-                    links.push(link)
-                })
+            let links = document
+                .links(buf, check_anchors, sources_path.is_some())
                 .with_context(|| format!("Failed to read file {}", document.path.display()))?;
 
             Ok(links)
@@ -173,10 +169,8 @@ fn main() -> Result<(), Error> {
         let results: Vec<_> = document_sources
             .par_iter()
             .map(|source| -> Result<_, Error> {
-                // XXX: Inefficient
-                let mut paragraphs = Vec::new();
-                source
-                    .paragraphs(|p| paragraphs.push(p))
+                let paragraphs = source
+                    .paragraphs()
                     .with_context(|| format!("Failed to read file {}", source.path.display()))?;
                 Ok((source, paragraphs))
             })

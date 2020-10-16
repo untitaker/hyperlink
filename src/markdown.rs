@@ -19,11 +19,12 @@ impl DocumentSource {
         DocumentSource { path }
     }
 
-    pub fn paragraphs(&self, mut sink: impl FnMut(Paragraph)) -> Result<(), Error> {
+    pub fn paragraphs(&self) -> Result<Vec<Paragraph>, Error> {
         let text = fs::read_to_string(&self.path)?;
 
         let mut in_paragraph = false;
         let mut hasher = ParagraphHasher::new();
+        let mut rv = Vec::new();
 
         for event in Parser::new(&text) {
             match event {
@@ -31,7 +32,7 @@ impl DocumentSource {
                     in_paragraph = true;
                 }
                 Event::End(tag) if PARAGRAPH_TAGS.contains(&tag) => {
-                    sink(hasher.finish_paragraph());
+                    rv.push(hasher.finish_paragraph());
                     in_paragraph = false;
                 }
                 Event::Text(text) | Event::Code(text) => {
@@ -43,6 +44,6 @@ impl DocumentSource {
             }
         }
 
-        Ok(())
+        Ok(rv)
     }
 }

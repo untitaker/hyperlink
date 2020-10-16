@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::fs;
-use std::io::BufReader;
+use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::str;
 
@@ -92,6 +92,7 @@ pub struct DefinedLink<'a> {
     pub paragraph: Option<Paragraph>,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Link<'a> {
     Uses(UsedLink<'a>),
     Defines(DefinedLink<'a>),
@@ -152,15 +153,30 @@ impl Document {
         buf: &mut Vec<u8>,
         check_anchors: bool,
         get_paragraphs: bool,
-        mut sink: impl FnMut(Link<'a>),
-    ) -> Result<(), Error> {
-        let mut reader = Reader::from_reader(BufReader::new(fs::File::open(&self.path)?));
+    ) -> Result<Vec<Link<'a>>, Error> {
+        self.links_from_read(
+            buf,
+            fs::File::open(&self.path)?,
+            check_anchors,
+            get_paragraphs,
+        )
+    }
+
+    fn links_from_read<'a>(
+        &'a self,
+        buf: &mut Vec<u8>,
+        read: impl Read,
+        check_anchors: bool,
+        get_paragraphs: bool,
+    ) -> Result<Vec<Link<'a>>, Error> {
+        let mut reader = Reader::from_reader(BufReader::new(read));
         reader.trim_text(true);
         reader.expand_empty_elements(true);
         reader.check_end_names(false);
 
         let mut hasher = ParagraphHasher::new();
-        let mut pending_links = Vec::new();
+        let mut rv = Vec::new();
+        let mut last_paragraph_i = 0;
         let mut in_paragraph = false;
 
         loop {
@@ -169,10 +185,7 @@ impl Document {
                 Event::Start(ref e) => {
                     if PARAGRAPH_TAGS.contains(&e.name()) {
                         in_paragraph = true;
-
-                        for link in pending_links.drain(..) {
-                            sink(link);
-                        }
+                        last_paragraph_i = rv.len();
                     }
 
                     macro_rules! extract_used_link {
@@ -185,7 +198,7 @@ impl Document {
                                         .iter()
                                         .all(|schema| !attr.value.starts_with(schema.as_bytes()))
                                 {
-                                    pending_links.push(Link::Uses(UsedLink {
+                                    rv.push(Link::Uses(UsedLink {
                                         href: self.join(
                                             check_anchors,
                                             str::from_utf8(&attr.unescaped_value()?)?,
@@ -205,7 +218,7 @@ impl Document {
                                     let attr = attr?;
 
                                     if attr.key == $attr_name {
-                                        pending_links.push(Link::Defines(DefinedLink {
+                                        rv.push(Link::Defines(DefinedLink {
                                             href: self.join(
                                                 check_anchors,
                                                 &format!("#{}", str::from_utf8(&attr.value)?),
@@ -237,7 +250,7 @@ impl Document {
                 Event::End(e) if get_paragraphs => {
                     if PARAGRAPH_TAGS.contains(&e.name()) {
                         let paragraph = hasher.finish_paragraph();
-                        for mut link in pending_links.drain(..) {
+                        for link in &mut rv[last_paragraph_i..] {
                             match link {
                                 Link::Defines(ref mut x) => {
                                     x.paragraph = Some(paragraph);
@@ -246,9 +259,9 @@ impl Document {
                                     x.paragraph = Some(paragraph);
                                 }
                             }
-                            sink(link);
                         }
                         in_paragraph = false;
+                        last_paragraph_i = rv.len();
                     }
                 }
                 Event::Text(e) if get_paragraphs && in_paragraph => {
@@ -258,12 +271,130 @@ impl Document {
             }
         }
 
-        for link in pending_links {
-            sink(link);
-        }
-
         buf.clear();
 
-        Ok(())
+        Ok(rv)
     }
+}
+
+#[test]
+fn test_document_href() {
+    let doc = Document::new(
+        Path::new("public/"),
+        "public/platforms/python/troubleshooting/index.html".into(),
+    );
+
+    assert_eq!(doc.href, Href("platforms/python/troubleshooting".into()));
+
+    let doc = Document::new(
+        Path::new("public/"),
+        "public/platforms/python/troubleshooting.html".into(),
+    );
+
+    assert_eq!(
+        doc.href,
+        Href("platforms/python/troubleshooting.html".into())
+    );
+}
+
+#[test]
+fn test_document_links() {
+    let doc = Document::new(
+        Path::new("public/"),
+        "public/platforms/python/troubleshooting/index.html".into(),
+    );
+
+    let links = doc
+        .links_from_read(
+            &mut Vec::new(),
+            r#"""
+    <a href="../../ruby/" />
+    <a href="/platforms/perl/">Perl</a>
+
+    <a href=../../rust/>
+    <a href='../../go/'>
+    """#
+            .as_bytes(),
+            false,
+            false,
+        )
+        .unwrap();
+
+    let used_link = |x: &'static str| {
+        Link::Uses(UsedLink {
+            href: Href(x.into()),
+            path: &doc.path,
+            paragraph: None,
+        })
+    };
+
+    assert_eq!(
+        &links,
+        &[
+            used_link("platforms/ruby"),
+            used_link("platforms/perl"),
+            used_link("platforms/rust"),
+            used_link("platforms/go"),
+        ]
+    );
+}
+
+#[test]
+fn test_document_join_index_html() {
+    let doc = Document::new(
+        Path::new("public/"),
+        "public/platforms/python/troubleshooting/index.html".into(),
+    );
+
+    assert_eq!(
+        doc.join(false, "../../ruby#foo"),
+        Href("platforms/ruby".into())
+    );
+    assert_eq!(
+        doc.join(true, "../../ruby#foo"),
+        Href("platforms/ruby#foo".into())
+    );
+    assert_eq!(
+        doc.join(true, "../../ruby?bar=1#foo"),
+        Href("platforms/ruby#foo".into())
+    );
+
+    assert_eq!(
+        doc.join(false, "/platforms/ruby"),
+        Href("platforms/ruby".into())
+    );
+    assert_eq!(
+        doc.join(true, "/platforms/ruby?bar=1#foo"),
+        Href("platforms/ruby#foo".into())
+    );
+}
+
+#[test]
+fn test_document_join_bare_html() {
+    let doc = Document::new(
+        Path::new("public/"),
+        "public/platforms/python/troubleshooting.html".into(),
+    );
+
+    assert_eq!(
+        doc.join(false, "../ruby#foo"),
+        Href("platforms/ruby".into())
+    );
+    assert_eq!(
+        doc.join(true, "../ruby#foo"),
+        Href("platforms/ruby#foo".into())
+    );
+    assert_eq!(
+        doc.join(true, "../ruby?bar=1#foo"),
+        Href("platforms/ruby#foo".into())
+    );
+
+    assert_eq!(
+        doc.join(false, "/platforms/ruby"),
+        Href("platforms/ruby".into())
+    );
+    assert_eq!(
+        doc.join(true, "/platforms/ruby?bar=1#foo"),
+        Href("platforms/ruby#foo".into())
+    );
 }
