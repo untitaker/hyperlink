@@ -1,9 +1,7 @@
 # adapted from https://github.com/paskausks/rust-bin-github-workflows/blob/master/.github/workflows/release.yml
 on:
   push:
-    # Sequence of patterns matched against refs/tags
-    tags:
-      - '*' # Push events to matching *, i.e. v1.0, v20.15.10
+    branches: [ main ]
 
 name: Create Release
 
