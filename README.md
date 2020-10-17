@@ -27,14 +27,24 @@ Very fast link checker for static sites.
   internal links only. Anything beyond that is opt-in. See [Options](#options)
   for a list of features to enable.
 
-## Usage
+## Installation and Usage
 
-[Install Rust](https://rustup.rs/), and:
+[Download the latest binary](https://github.com/untitaker/hyperlink/releases) and:
 
 ```
-cargo build --release
-./target/release/hyperlink public/
+./hyperlink public/
 ```
+
+Or as GitHub action:
+
+```
+- uses: untitaker/hyperlink@0.1.0
+  with:
+    args: public/
+```
+
+Or build from source by [installing Rust](https://rustup.rs/) and running
+`cargo build --release`.
 
 ## Options
 
