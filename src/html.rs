@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt;
 use std::fs;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -64,7 +65,7 @@ fn test_push_and_canonicalize3() {
     assert_eq!(base, "2014/article.html");
 }
 
-#[derive(Debug, Clone, derive_more::Display, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Href<'a>(Cow<'a, str>);
 
 impl<'a> Href<'a> {
@@ -76,6 +77,12 @@ impl<'a> Href<'a> {
         }
 
         Href(s.into())
+    }
+}
+
+impl<'a> fmt::Display for Href<'a> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(fmt)
     }
 }
 
