@@ -1,0 +1,62 @@
+# adapted from https://github.com/paskausks/rust-bin-github-workflows/blob/master/.github/workflows/release.yml
+on:
+  push:
+    branches: [ main ]
+
+name: Create Release
+
+env:
+  # Could, potentially automatically parse
+  # the bin name, but let's do it automatically for now.
+  RELEASE_BIN: hyperlink
+
+jobs:
+  build:
+    name: Build release
+
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        build: [linux, macos, windows]
+        include:
+          - build: linux
+            os: ubuntu-latest
+            rust: stable
+          - build: macos
+            os: macos-latest
+            rust: stable
+          - build: windows
+            os: windows-latest
+            rust: stable
+
+    steps:
+      - uses: actions/checkout@v1
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build
+        run: cargo build --verbose --release --locked
+
+      - name: Create artifact directory
+        run: mkdir artifacts
+
+      - name: Create artifact for Linux
+        run: cp ./target/release/${{ env.RELEASE_BIN }} ./artifacts/${{ env.RELEASE_BIN }}-linux-x86_64
+        if: matrix.os == 'ubuntu-latest'
+
+      - name: Create artifact for Windows
+        run: cp ./target/release/${{ env.RELEASE_BIN }}.exe ./artifacts/${{ env.RELEASE_BIN }}-windows-x86_64.exe
+        if: matrix.os == 'windows-latest'
+
+      - name: Create artifact for MacOS
+        run: cp ./target/release/${{ env.RELEASE_BIN }} ./artifacts/${{ env.RELEASE_BIN }}-mac-x86_64
+        if: matrix.os == 'macos-latest'
+
+      # This will double-zip
+      # See - https://github.com/actions/upload-artifact/issues/39
+      - uses: actions/upload-artifact@v1
+        name: Upload archive
+        with:
+          name: ${{ runner.os }}
+          path: artifacts/
