@@ -14,4 +14,7 @@ inputs:
 runs:
   using: docker
   image: Dockerfile
-  args: ${{ inputs.args }} --github-actions
+  entrypoint: sh
+  args:
+    - -c
+    - "/usr/bin/hyperlink ${{ inputs.args }} --github-actions"

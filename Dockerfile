@@ -18,5 +18,3 @@ RUN cargo build --release --locked
 FROM debian:stretch-slim
 COPY --from=hyperlink-build /work/target/release/hyperlink /usr/bin/hyperlink
 RUN chmod +x /usr/bin/hyperlink
-
-ENTRYPOINT ["/usr/bin/hyperlink"]
