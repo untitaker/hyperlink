@@ -1,0 +1,32 @@
+name: Hyperlink
+description: Run hyperlink link checker on a folder of static HTML
+inputs:
+  args:
+    description: CLI arguments to hyperlink
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Download Hyperlink
+      run: |
+        set -x
+        cd ${{ github.action_path }}
+        tag="$(grep version Cargo.toml | cut -d '"' -f2)"
+
+        if [ "$RUNNER_OS" == "Linux" ]; then
+          curl -L -o bin https://github.com/untitaker/hyperlink/releases/download/$tag/hyperlink-linux-x86_64
+        elif [ "$RUNNER_OS" == "Windows" ]; then
+          curl -L -o bin https://github.com/untitaker/hyperlink/releases/download/$tag/hyperlink-windows-x86_64.exe
+        elif [ "$RUNNER_OS" = "MacOS" ]; then
+          curl - L -o bin https://github.com/untitaker/hyperlink/releases/download/$tag/hyperlink-mac-x86_64
+        else
+             echo "$RUNNER_OS not supported"
+             exit 1
+        fi
+        chmod +x bin
+      shell: bash
+
+    - name: Run Hyperlink
+      run: ${{ github.action_path }}/bin ${{ inputs.args }} --github-actions
+      shell: bash
