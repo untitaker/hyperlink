@@ -13,6 +13,7 @@ RUN mkdir -p src \
 
 # Build the actual app
 COPY src ./src/
+RUN touch src/main.rs
 RUN cargo build --release --locked
 
 FROM debian:stretch-slim
