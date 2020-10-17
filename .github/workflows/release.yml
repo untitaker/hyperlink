@@ -1,18 +1,37 @@
 # adapted from https://github.com/paskausks/rust-bin-github-workflows/blob/master/.github/workflows/release.yml
 on:
   push:
-    branches: [ main ]
+    tags: '*'
 
 name: Create Release
 
-env:
-  # Could, potentially automatically parse
-  # the bin name, but let's do it automatically for now.
-  RELEASE_BIN: hyperlink
-
 jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    steps:
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1.0.0
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+    - name: Output Release URL File
+      run: echo "${{ steps.create_release.outputs.upload_url }}" > upload_url.txt
+    - name: Save Release URL File for publish
+      uses: actions/upload-artifact@v1
+      with:
+        name: upload_url
+        path: upload_url.txt
+
   build:
-    name: Build release
+    name: artifact
+
+    needs: [release]
 
     runs-on: ${{ matrix.os }}
     strategy:
@@ -21,16 +40,30 @@ jobs:
         include:
           - build: linux
             os: ubuntu-latest
-            rust: stable
+            asset_name: hyperlink-linux-x86_64
+            cargo_name: hyperlink
           - build: macos
+            asset_name: hyperlink-mac-x86_64
+            cargo_name: hyperlink
             os: macos-latest
-            rust: stable
           - build: windows
+            cargo_name: hyperlink.exe
+            asset_name: hyperlink-windows-x86_64.exe
             os: windows-latest
-            rust: stable
 
     steps:
       - uses: actions/checkout@v1
+
+      - name: Load Release URL File from release job
+        uses: actions/download-artifact@v1
+        with:
+          name: upload_url
+
+      - name: Get Release File Name & Upload URL
+        id: get-release-info
+        shell: bash
+        run: echo ::set-output name=upload_url::`cat upload_url/upload_url.txt`
+
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
@@ -38,25 +71,13 @@ jobs:
       - name: Build
         run: cargo build --verbose --release --locked
 
-      - name: Create artifact directory
-        run: mkdir artifacts
-
-      - name: Create artifact for Linux
-        run: cp ./target/release/${{ env.RELEASE_BIN }} ./artifacts/${{ env.RELEASE_BIN }}-linux-x86_64
-        if: matrix.os == 'ubuntu-latest'
-
-      - name: Create artifact for Windows
-        run: cp ./target/release/${{ env.RELEASE_BIN }}.exe ./artifacts/${{ env.RELEASE_BIN }}-windows-x86_64.exe
-        if: matrix.os == 'windows-latest'
-
-      - name: Create artifact for MacOS
-        run: cp ./target/release/${{ env.RELEASE_BIN }} ./artifacts/${{ env.RELEASE_BIN }}-mac-x86_64
-        if: matrix.os == 'macos-latest'
-
-      # This will double-zip
-      # See - https://github.com/actions/upload-artifact/issues/39
-      - uses: actions/upload-artifact@v1
-        name: Upload archive
+      - name: Upload Release Asset
+        id: upload-release-asset
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: ${{ runner.os }}
-          path: artifacts/
+          upload_url: ${{ steps.get-release-info.outputs.upload_url }}
+          asset_path: ./target/release/${{ matrix.cargo_name }}
+          asset_name: ${{ matrix.asset_name }}
+          asset_content_type: application/zip
