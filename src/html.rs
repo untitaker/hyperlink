@@ -116,7 +116,12 @@ impl Document {
             href_path = href_path.parent().unwrap_or(href_path);
         }
 
-        let href = Href(href_path.display().to_string().into());
+        let mut href = href_path.display().to_string();
+        if cfg!(windows) {
+            href = href.replace('\\', "/");
+        }
+
+        let href = Href(href.into());
 
         Document {
             path,
