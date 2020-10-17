@@ -1,0 +1,17 @@
+name: Hyperlink
+description: Run hyperlink link checker on a folder of static HTML
+inputs:
+  args:
+    description: CLI arguments to hyperlink
+    required: true
+
+
+# We are using a dockerfile because docker images (+ therefore the binary) get
+# cached. If https://github.com/actions/runner/issues/646 were fixed, we could
+# use the cache action to cache the binary instead, which would probably be
+# faster.
+
+runs:
+  using: docker
+  image: Dockerfile
+  args: ${{ inputs.args }} --github-actions
