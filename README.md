@@ -32,7 +32,14 @@ Very fast link checker for static sites.
 [Download the latest binary](https://github.com/untitaker/hyperlink/releases) and:
 
 ```
+# Check a folder of HTML
 ./hyperlink public/
+
+# Also validate anchors
+./hyperlink public/ --check-anchors
+
+# src/ is a folder of Markdown. Show original Markdown file paths in errors
+./hyperlink public/ --sources src/
 ```
 
 Or as GitHub action:
@@ -40,7 +47,7 @@ Or as GitHub action:
 ```
 - uses: untitaker/hyperlink@0.1.1
   with:
-    args: public/
+    args: public/ --sources src/
 ```
 
 Or build from source by [installing Rust](https://rustup.rs/) and running
@@ -75,8 +82,9 @@ links. However, it can do more.
     `hyperlink` does not have to assume anything about your build pipeline.
 
 * `--github-actions`: Emit [GitHub actions
-  errors](https://docs.github.com/en/free-pro-team@latest/actions/reference/workflow-commands-for-github-actions#setting-an-error-message).
-  This only has an effect with `--sources` set.
+  errors](https://docs.github.com/en/free-pro-team@latest/actions/reference/workflow-commands-for-github-actions#setting-an-error-message),
+  i.e. add error messages in-line to PR diffs. This is only useful with
+  `--sources` set.
 
 ## Exit codes
 
