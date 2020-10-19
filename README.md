@@ -117,6 +117,11 @@ links. However, it can do more.
   parity with `hyperlink`), however is still slower than `hyperlink` in
   single-threaded mode (`-j 1`)
 
+* [liche](https://github.com/raviqqe/liche) and
+  [muffet](https://github.com/raviqqe/muffet) seems to have similar performance
+  as `htmltest`. We tested `muffet` with node http server and webfsd without
+  noticing a change in timings.
+
 ## License
 
 Licensed under the MIT, see [`./LICENSE`](./LICENSE).
