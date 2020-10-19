@@ -18,8 +18,8 @@ Very fast link checker for static sites.
 * Only supports UTF-8 encoded HTML files.
 
 * **Fast.** [docs.sentry.io](https://github.com/getsentry/sentry-docs) produces
-  1.1 GB of HTML files. All [alternatives](#alternatives) we tried were too
-  slow for this.
+  1.1 GB of HTML files. All [alternatives](#alternatives) we tried were slower
+  than `hyperlink` on this site.
 
   `hyperlink` handles this amount of data in 4 seconds on a MacBook Pro 2018.
 
