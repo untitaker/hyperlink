@@ -119,7 +119,8 @@ links. However, it can do more.
 
 * [liche](https://github.com/raviqqe/liche) and
   [muffet](https://github.com/raviqqe/muffet) seems to have similar performance
-  as `htmltest`. We tested `muffet` with node http server and webfsd without
+  as `htmltest`. We tested `muffet` with
+  [`http-server`](https://www.npmjs.com/package/http-server) and webfsd without
   noticing a change in timings.
 
 ## License
