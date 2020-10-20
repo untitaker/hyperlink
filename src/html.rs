@@ -1,11 +1,11 @@
-use std::borrow::Cow;
 use std::fmt;
 use std::fs;
 use std::io::{BufReader, Read};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str;
 
 use anyhow::Error;
+use bumpalo::collections::String as BumpString;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
@@ -18,7 +18,7 @@ static BAD_SCHEMAS: &[&str] = &[
 static PARAGRAPH_TAGS: &[&[u8]] = &[b"p", b"li"];
 
 #[inline]
-fn push_and_canonicalize(base: &mut String, path: &str) {
+fn push_and_canonicalize(base: &mut BumpString<'_>, path: &str) {
     if path.starts_with('/') {
         base.clear();
     }
@@ -43,7 +43,8 @@ fn push_and_canonicalize(base: &mut String, path: &str) {
 
 #[test]
 fn test_push_and_canonicalize() {
-    let mut base = "2019/".into();
+    let arena = bumpalo::Bump::new();
+    let mut base = BumpString::from_str_in("2019/", &arena);
     let path = "../feed.xml";
     push_and_canonicalize(&mut base, path);
     assert_eq!(base, "feed.xml");
@@ -51,7 +52,8 @@ fn test_push_and_canonicalize() {
 
 #[test]
 fn test_push_and_canonicalize2() {
-    let mut base = "contact.html".into();
+    let arena = bumpalo::Bump::new();
+    let mut base = BumpString::from_str_in("contact.html", &arena);
     let path = "contact.html";
     push_and_canonicalize(&mut base, path);
     assert_eq!(base, "contact.html");
@@ -59,14 +61,15 @@ fn test_push_and_canonicalize2() {
 
 #[test]
 fn test_push_and_canonicalize3() {
-    let mut base = "".into();
+    let arena = bumpalo::Bump::new();
+    let mut base = BumpString::from_str_in("", &arena);
     let path = "./2014/article.html";
     push_and_canonicalize(&mut base, path);
     assert_eq!(base, "2014/article.html");
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Href<'a>(Cow<'a, str>);
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+pub struct Href<'a>(&'a str);
 
 impl<'a> Href<'a> {
     pub fn without_anchor(&self) -> Href<'_> {
@@ -76,7 +79,7 @@ impl<'a> Href<'a> {
             s = &s[..i];
         }
 
-        Href(s.into())
+        Href(s)
     }
 }
 
@@ -105,14 +108,14 @@ pub enum Link<'a> {
     Defines(DefinedLink<'a>),
 }
 
-pub struct Document {
-    pub path: PathBuf,
-    pub href: Href<'static>,
+pub struct Document<'a> {
+    pub path: &'a Path,
+    pub href: Href<'a>,
     pub is_index_html: bool,
 }
 
-impl Document {
-    pub fn new(base_path: &Path, path: PathBuf) -> Self {
+impl<'a> Document<'a> {
+    pub fn new(arena: &'a bumpalo::Bump, base_path: &Path, path: &'a Path) -> Self {
         let mut href_path = path
             .strip_prefix(base_path)
             .expect("base_path is not a base of path");
@@ -123,12 +126,20 @@ impl Document {
             href_path = href_path.parent().unwrap_or(href_path);
         }
 
-        let mut href = href_path.display().to_string();
+        let href = arena.alloc_str(href_path.to_str().expect("Invalid unicode in path"));
         if cfg!(windows) {
-            href = href.replace('\\', "/");
+            unsafe {
+                // safety: we replace ascii bytes only
+                let href = href.as_bytes_mut();
+                for b in href.iter_mut() {
+                    if *b == b'\\' {
+                        *b = b'/';
+                    }
+                }
+            }
         }
 
-        let href = Href(href.into());
+        let href = Href(&*href);
 
         Document {
             path,
@@ -137,13 +148,18 @@ impl Document {
         }
     }
 
-    fn join(&self, preserve_anchor: bool, rel_href: &str) -> Href<'_> {
+    fn join<'b>(
+        &self,
+        arena: &'b bumpalo::Bump,
+        preserve_anchor: bool,
+        rel_href: &str,
+    ) -> Href<'b> {
         let qs_start = rel_href
             .find(&['?', '#'][..])
             .unwrap_or_else(|| rel_href.len());
         let anchor_start = rel_href.find('#').unwrap_or_else(|| rel_href.len());
 
-        let mut href = self.href.0.clone().into_owned();
+        let mut href = BumpString::from_str_in(&self.href.0, arena);
         if self.is_index_html {
             href.push('/');
         }
@@ -157,47 +173,61 @@ impl Document {
             }
         }
 
-        Href(href.into())
+        Href(href.into_bump_str())
     }
 
-    pub fn links<'a>(
-        &'a self,
-        buf: &mut Vec<u8>,
+    pub fn links<'b, 'link>(
+        &self,
+        arena: &'b bumpalo::Bump,
+        xml_buf: &mut Vec<u8>,
+        sink: &mut Vec<Link<'link>>,
         check_anchors: bool,
         get_paragraphs: bool,
-    ) -> Result<Vec<Link<'a>>, Error> {
+    ) -> Result<(), Error>
+    where
+        'a: 'link,
+        'b: 'link,
+    {
         self.links_from_read(
-            buf,
+            arena,
+            xml_buf,
+            sink,
             fs::File::open(&self.path)?,
             check_anchors,
             get_paragraphs,
         )
     }
 
-    fn links_from_read<'a>(
-        &'a self,
-        buf: &mut Vec<u8>,
+    fn links_from_read<'b, 'link>(
+        &self,
+        arena: &'b bumpalo::Bump,
+        xml_buf: &mut Vec<u8>,
+        sink: &mut Vec<Link<'link>>,
         read: impl Read,
         check_anchors: bool,
         get_paragraphs: bool,
-    ) -> Result<Vec<Link<'a>>, Error> {
+    ) -> Result<(), Error>
+    where
+        'a: 'link,
+        'b: 'link,
+    {
         let mut reader = Reader::from_reader(BufReader::new(read));
         reader.trim_text(true);
         reader.expand_empty_elements(true);
         reader.check_end_names(false);
 
         let mut hasher = ParagraphHasher::new();
-        let mut rv = Vec::new();
-        let mut last_paragraph_i = 0;
+
+        let mut last_paragraph_i = sink.len();
         let mut in_paragraph = false;
 
         loop {
-            match reader.read_event(buf)? {
+            match reader.read_event(xml_buf)? {
                 Event::Eof => break,
                 Event::Start(ref e) => {
                     if PARAGRAPH_TAGS.contains(&e.name()) {
                         in_paragraph = true;
-                        last_paragraph_i = rv.len();
+                        last_paragraph_i = sink.len();
                     }
 
                     macro_rules! extract_used_link {
@@ -210,8 +240,9 @@ impl Document {
                                         .iter()
                                         .all(|schema| !attr.value.starts_with(schema.as_bytes()))
                                 {
-                                    rv.push(Link::Uses(UsedLink {
+                                    sink.push(Link::Uses(UsedLink {
                                         href: self.join(
+                                            arena,
                                             check_anchors,
                                             str::from_utf8(&attr.unescaped_value()?)?,
                                         ),
@@ -230,10 +261,15 @@ impl Document {
                                     let attr = attr?;
 
                                     if attr.key == $attr_name {
-                                        rv.push(Link::Defines(DefinedLink {
+                                        let mut href = BumpString::new_in(arena);
+                                        href.push('#');
+                                        href.push_str(str::from_utf8(&attr.value)?);
+
+                                        sink.push(Link::Defines(DefinedLink {
                                             href: self.join(
+                                                arena,
                                                 check_anchors,
-                                                &format!("#{}", str::from_utf8(&attr.value)?),
+                                                href.into_bump_str(),
                                             ),
                                             paragraph: None,
                                         }));
@@ -262,7 +298,7 @@ impl Document {
                 Event::End(e) if get_paragraphs => {
                     if PARAGRAPH_TAGS.contains(&e.name()) {
                         let paragraph = hasher.finish_paragraph();
-                        for link in &mut rv[last_paragraph_i..] {
+                        for link in &mut sink[last_paragraph_i..] {
                             match link {
                                 Link::Defines(ref mut x) => {
                                     x.paragraph = Some(paragraph);
@@ -273,7 +309,7 @@ impl Document {
                             }
                         }
                         in_paragraph = false;
-                        last_paragraph_i = rv.len();
+                        last_paragraph_i = sink.len();
                     }
                 }
                 Event::Text(e) if get_paragraphs && in_paragraph => {
@@ -283,58 +319,64 @@ impl Document {
             }
         }
 
-        buf.clear();
-
-        Ok(rv)
+        Ok(())
     }
 }
 
 #[test]
 fn test_document_href() {
+    let arena = bumpalo::Bump::new();
     let doc = Document::new(
+        &arena,
         Path::new("public/"),
-        "public/platforms/python/troubleshooting/index.html".into(),
+        Path::new("public/platforms/python/troubleshooting/index.html"),
     );
 
-    assert_eq!(doc.href, Href("platforms/python/troubleshooting".into()));
+    assert_eq!(doc.href, Href("platforms/python/troubleshooting"));
 
     let doc = Document::new(
+        &arena,
         Path::new("public/"),
-        "public/platforms/python/troubleshooting.html".into(),
+        Path::new("public/platforms/python/troubleshooting.html"),
     );
 
     assert_eq!(
         doc.href,
-        Href("platforms/python/troubleshooting.html".into())
+        Href("platforms/python/troubleshooting.html")
     );
 }
 
 #[test]
 fn test_document_links() {
+    let arena = bumpalo::Bump::new();
     let doc = Document::new(
+        &arena,
         Path::new("public/"),
-        "public/platforms/python/troubleshooting/index.html".into(),
+        Path::new("public/platforms/python/troubleshooting/index.html"),
     );
 
-    let links = doc
-        .links_from_read(
-            &mut Vec::new(),
-            r#"""
+    let mut links = Vec::new();
+
+    doc.links_from_read(
+        &arena,
+        &mut Vec::new(),
+        &mut links,
+        r#"""
     <a href="../../ruby/" />
     <a href="/platforms/perl/">Perl</a>
 
     <a href=../../rust/>
     <a href='../../go/'>
     """#
-            .as_bytes(),
-            false,
-            false,
-        )
-        .unwrap();
+        .as_bytes(),
+        false,
+        false,
+    )
+    .unwrap();
 
     let used_link = |x: &'static str| {
         Link::Uses(UsedLink {
-            href: Href(x.into()),
+            href: Href(x),
             path: &doc.path,
             paragraph: None,
         })
@@ -353,60 +395,64 @@ fn test_document_links() {
 
 #[test]
 fn test_document_join_index_html() {
+    let arena = bumpalo::Bump::new();
     let doc = Document::new(
+        &arena,
         Path::new("public/"),
-        "public/platforms/python/troubleshooting/index.html".into(),
+        Path::new("public/platforms/python/troubleshooting/index.html"),
     );
 
     assert_eq!(
-        doc.join(false, "../../ruby#foo"),
-        Href("platforms/ruby".into())
+        doc.join(&arena, false, "../../ruby#foo"),
+        Href("platforms/ruby")
     );
     assert_eq!(
-        doc.join(true, "../../ruby#foo"),
-        Href("platforms/ruby#foo".into())
+        doc.join(&arena, true, "../../ruby#foo"),
+        Href("platforms/ruby#foo")
     );
     assert_eq!(
-        doc.join(true, "../../ruby?bar=1#foo"),
-        Href("platforms/ruby#foo".into())
+        doc.join(&arena, true, "../../ruby?bar=1#foo"),
+        Href("platforms/ruby#foo")
     );
 
     assert_eq!(
-        doc.join(false, "/platforms/ruby"),
-        Href("platforms/ruby".into())
+        doc.join(&arena, false, "/platforms/ruby"),
+        Href("platforms/ruby")
     );
     assert_eq!(
-        doc.join(true, "/platforms/ruby?bar=1#foo"),
-        Href("platforms/ruby#foo".into())
+        doc.join(&arena, true, "/platforms/ruby?bar=1#foo"),
+        Href("platforms/ruby#foo")
     );
 }
 
 #[test]
 fn test_document_join_bare_html() {
+    let arena = bumpalo::Bump::new();
     let doc = Document::new(
+        &arena,
         Path::new("public/"),
-        "public/platforms/python/troubleshooting.html".into(),
+        Path::new("public/platforms/python/troubleshooting.html"),
     );
 
     assert_eq!(
-        doc.join(false, "../ruby#foo"),
-        Href("platforms/ruby".into())
+        doc.join(&arena, false, "../ruby#foo"),
+        Href("platforms/ruby")
     );
     assert_eq!(
-        doc.join(true, "../ruby#foo"),
-        Href("platforms/ruby#foo".into())
+        doc.join(&arena, true, "../ruby#foo"),
+        Href("platforms/ruby#foo")
     );
     assert_eq!(
-        doc.join(true, "../ruby?bar=1#foo"),
-        Href("platforms/ruby#foo".into())
+        doc.join(&arena, true, "../ruby?bar=1#foo"),
+        Href("platforms/ruby#foo")
     );
 
     assert_eq!(
-        doc.join(false, "/platforms/ruby"),
-        Href("platforms/ruby".into())
+        doc.join(&arena, false, "/platforms/ruby"),
+        Href("platforms/ruby")
     );
     assert_eq!(
-        doc.join(true, "/platforms/ruby?bar=1#foo"),
-        Href("platforms/ruby#foo".into())
+        doc.join(&arena, true, "/platforms/ruby?bar=1#foo"),
+        Href("platforms/ruby#foo")
     );
 }

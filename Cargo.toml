@@ -14,3 +14,5 @@ rayon = "1.4.1"
 pulldown-cmark = "0.8.0"
 blake3 = "0.3.7"
 quick-xml = "0.20.0"
+bumpalo = { version = "3.4.0", features = ["collections"] }
+thread_local = "1.0.1"

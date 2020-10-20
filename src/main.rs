@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::process;
 
 use anyhow::{anyhow, Context, Error};
+use bumpalo::collections::Vec as BumpVec;
 use markdown::DocumentSource;
 use rayon::prelude::*;
 use structopt::StructOpt;
@@ -58,8 +59,11 @@ fn main() -> Result<(), Error> {
             .unwrap();
     }
 
+    let arenas = thread_local::ThreadLocal::new();
+    let main_arena = arenas.get_or_default();
+
     let mut defined_links = BTreeSet::new();
-    let mut documents = Vec::new();
+    let mut documents = BumpVec::new_in(&main_arena);
 
     println!("Discovering files");
 
@@ -79,9 +83,9 @@ fn main() -> Result<(), Error> {
             continue;
         }
 
-        let document = Document::new(&base_path, entry.into_path());
+        let document = Document::new(&main_arena, &base_path, main_arena.alloc(entry.into_path()));
 
-        if !defined_links.insert(document.href.clone()) {
+        if !defined_links.insert(document.href) {
             panic!("Found two files that would probably serve the same href. One of them is {}. Please file a bug with the output of 'find' on your folder.", document.path.display());
         }
 
@@ -100,33 +104,46 @@ fn main() -> Result<(), Error> {
         defined_links.len()
     );
 
-    let links_result: Result<_, Error> = documents
+    let extracted_links: Vec<Result<_, Error>> = documents
         .par_iter()
-        .map_init(Vec::new, |buf, document| {
-            let links = document
-                .links(buf, check_anchors, sources_path.is_some())
-                .with_context(|| format!("Failed to read file {}", document.path.display()))?;
+        .try_fold(
+            // apparently can't use arena allocations here because that would make values !Send
+            // also because quick-xml specifically wants std vec
+            || (Vec::new(), Vec::new()),
+            |(mut xml_buf, mut sink), document| {
+                document
+                    .links(
+                        arenas.get_or_default(),
+                        &mut xml_buf,
+                        &mut sink,
+                        check_anchors,
+                        sources_path.is_some(),
+                    )
+                    .with_context(|| format!("Failed to read file {}", document.path.display()))?;
 
-            Ok(links)
-        })
-        .try_reduce(Vec::new, |mut links, links2| {
-            links.extend(links2);
-            Ok(links)
-        });
+                xml_buf.clear();
+
+                Ok((xml_buf, sink))
+            },
+        )
+        .collect();
 
     let mut used_links = BTreeMap::new();
 
-    for link in links_result? {
-        match link {
-            Link::Uses(used_link) => {
-                used_links
-                    .entry(used_link.href.clone())
-                    .or_insert_with(Vec::new)
-                    .push(used_link);
-            }
-            Link::Defines(defined_link) => {
-                // XXX: Use whole link
-                defined_links.insert(defined_link.href);
+    for result in extracted_links {
+        let (_xml_buf, link_chunk) = result?;
+        for link in link_chunk {
+            match link {
+                Link::Uses(used_link) => {
+                    used_links
+                        .entry(used_link.href)
+                        .or_insert_with(|| BumpVec::new_in(main_arena))
+                        .push(used_link);
+                }
+                Link::Defines(defined_link) => {
+                    // XXX: Use whole link
+                    defined_links.insert(defined_link.href);
+                }
             }
         }
     }
@@ -137,7 +154,7 @@ fn main() -> Result<(), Error> {
         println!("Discovering source files");
 
         let mut file_count = 0;
-        let mut document_sources = Vec::new();
+        let mut document_sources = BumpVec::new_in(&main_arena);
 
         for entry in WalkDir::new(sources_path) {
             file_count += 1;
@@ -181,7 +198,7 @@ fn main() -> Result<(), Error> {
             for paragraph in paragraphs {
                 paragraps_to_sourcefile
                     .entry(paragraph)
-                    .or_insert_with(Vec::new)
+                    .or_insert_with(|| BumpVec::new_in(main_arena))
                     .push(source.clone());
             }
         }
@@ -212,9 +229,11 @@ fn main() -> Result<(), Error> {
                         for source in *document_sources {
                             let (bad_links, bad_anchors) = bad_links_and_anchors
                                 .entry((!had_sources, source.path.as_path()))
-                                .or_insert_with(|| (Vec::new(), Vec::new()));
+                                .or_insert_with(|| {
+                                    (BumpVec::new_in(&main_arena), BumpVec::new_in(&main_arena))
+                                });
 
-                            if hard_404 { bad_links } else { bad_anchors }.push(href.clone());
+                            if hard_404 { bad_links } else { bad_anchors }.push(href);
                         }
                     }
                 }
@@ -222,9 +241,11 @@ fn main() -> Result<(), Error> {
                 if !had_sources {
                     let (bad_links, bad_anchors) = bad_links_and_anchors
                         .entry((!had_sources, link.path))
-                        .or_insert_with(|| (Vec::new(), Vec::new()));
+                        .or_insert_with(|| {
+                            (BumpVec::new_in(&main_arena), BumpVec::new_in(&main_arena))
+                        });
 
-                    if hard_404 { bad_links } else { bad_anchors }.push(href.clone());
+                    if hard_404 { bad_links } else { bad_anchors }.push(href);
                 }
             }
         }
