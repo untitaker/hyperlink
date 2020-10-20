@@ -99,7 +99,7 @@ fn main() -> Result<(), Error> {
     }
 
     println!(
-        "Checking {} out of {} files",
+        "Reading {} out of {} files",
         documents.len(),
         defined_links.len()
     );
@@ -205,6 +205,8 @@ fn main() -> Result<(), Error> {
     }
 
     let used_links_len = used_links.len();
+    println!("Checking {} links", used_links_len);
+
     let mut bad_links_and_anchors = BTreeMap::new();
     let mut bad_links_count = 0;
     let mut bad_anchors_count = 0;
@@ -290,8 +292,6 @@ fn main() -> Result<(), Error> {
         println!();
     }
 
-    println!("Checked {} links", used_links_len);
-    println!("Checked {} files", documents.len());
     println!("Found {} bad links", bad_links_count);
 
     if check_anchors {
