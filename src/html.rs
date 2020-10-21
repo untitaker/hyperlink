@@ -357,6 +357,8 @@ fn test_document_href() {
 
 #[test]
 fn test_document_links() {
+    use crate::paragraph::ParagraphHasher;
+
     let arena = bumpalo::Bump::new();
     let doc = Document::new(
         &arena,
@@ -366,7 +368,7 @@ fn test_document_links() {
 
     let mut links = Vec::new();
 
-    doc.links_from_read(
+    doc.links_from_read::<_, ParagraphHasher>(
         &arena,
         &mut Vec::new(),
         &mut links,
