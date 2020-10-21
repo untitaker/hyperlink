@@ -267,11 +267,9 @@ fn main() -> Result<(), Error> {
                         for source in *document_sources {
                             let (bad_links, bad_anchors) = bad_links_and_anchors
                                 .entry((!had_sources, source.path.as_path()))
-                                .or_insert_with(|| {
-                                    (BumpVec::new_in(&main_arena), BumpVec::new_in(&main_arena))
-                                });
+                                .or_insert_with(|| (BTreeSet::new(), BTreeSet::new()));
 
-                            if hard_404 { bad_links } else { bad_anchors }.push(href);
+                            if hard_404 { bad_links } else { bad_anchors }.insert(href);
                         }
                     }
                 }
@@ -279,11 +277,9 @@ fn main() -> Result<(), Error> {
                 if !had_sources {
                     let (bad_links, bad_anchors) = bad_links_and_anchors
                         .entry((!had_sources, link.path))
-                        .or_insert_with(|| {
-                            (BumpVec::new_in(&main_arena), BumpVec::new_in(&main_arena))
-                        });
+                        .or_insert_with(|| (BTreeSet::new(), BTreeSet::new()));
 
-                    if hard_404 { bad_links } else { bad_anchors }.push(href);
+                    if hard_404 { bad_links } else { bad_anchors }.insert(href);
                 }
             }
         }
@@ -349,7 +345,7 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn print_github_actions_href_list(hrefs: &[Href]) {
+fn print_github_actions_href_list(hrefs: &BTreeSet<Href<'_>>) {
     for href in hrefs {
         // %0A -- escaped newline
         //
