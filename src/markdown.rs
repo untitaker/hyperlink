@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::Error;
 use pulldown_cmark::{Event, Parser, Tag};
 
-use crate::paragraph::{Paragraph, ParagraphHasher};
+use crate::paragraph::ParagraphWalker;
 
 // Note: Keep in sync with html.rs
 static PARAGRAPH_TAGS: &[Tag<'_>] = &[Tag::Paragraph, Tag::Item];
@@ -19,25 +19,42 @@ impl DocumentSource {
         DocumentSource { path }
     }
 
-    pub fn paragraphs(&self) -> Result<Vec<Paragraph>, Error> {
-        let text = fs::read_to_string(&self.path)?;
+    pub fn paragraphs<P: ParagraphWalker>(&self) -> Result<Vec<P::Paragraph>, Error> {
+        let text_raw = fs::read_to_string(&self.path)?;
+        let mut text = String::new();
+        for mut line in text_raw.lines() {
+            if line.starts_with("<") {
+                continue;
+            }
+
+            if line.starts_with(": ") {
+                line = &line[2..];
+            }
+
+            text.push_str(line);
+            text.push('\n');
+        }
 
         let mut in_paragraph = false;
-        let mut hasher = ParagraphHasher::new();
+        let mut walker = P::new();
         let mut rv = Vec::new();
 
         for event in Parser::new(&text) {
             match event {
                 Event::Start(tag) if PARAGRAPH_TAGS.contains(&tag) => {
+                    walker.finish_paragraph();
                     in_paragraph = true;
                 }
                 Event::End(tag) if PARAGRAPH_TAGS.contains(&tag) => {
-                    rv.push(hasher.finish_paragraph());
+                    let paragraph = walker.finish_paragraph();
+                    if in_paragraph {
+                        rv.push(paragraph);
+                    }
                     in_paragraph = false;
                 }
                 Event::Text(text) | Event::Code(text) => {
                     if in_paragraph {
-                        hasher.update(text.as_ref());
+                        walker.update(text.as_ref());
                     }
                 }
                 _ => {}

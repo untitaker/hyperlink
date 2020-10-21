@@ -9,13 +9,13 @@ use bumpalo::collections::String as BumpString;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
-use crate::paragraph::{Paragraph, ParagraphHasher};
+use crate::paragraph::ParagraphWalker;
 
 static BAD_SCHEMAS: &[&str] = &[
     "http://", "https://", "irc://", "ftp://", "mailto:", "data:",
 ];
 
-static PARAGRAPH_TAGS: &[&[u8]] = &[b"p", b"li"];
+static PARAGRAPH_TAGS: &[&[u8]] = &[b"p", b"li", b"dt", b"dd"];
 
 #[inline]
 fn push_and_canonicalize(base: &mut BumpString<'_>, path: &str) {
@@ -90,22 +90,31 @@ impl<'a> fmt::Display for Href<'a> {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct UsedLink<'a> {
+pub struct UsedLink<'a, P> {
     pub href: Href<'a>,
     pub path: &'a Path,
-    pub paragraph: Option<Paragraph>,
+    pub paragraph: Option<P>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct DefinedLink<'a> {
+pub struct DefinedLink<'a, P> {
     pub href: Href<'a>,
-    pub paragraph: Option<Paragraph>,
+    pub paragraph: Option<P>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub enum Link<'a> {
-    Uses(UsedLink<'a>),
-    Defines(DefinedLink<'a>),
+pub enum Link<'a, P> {
+    Uses(UsedLink<'a, P>),
+    Defines(DefinedLink<'a, P>),
+}
+
+impl<'a, P> Link<'a, P> {
+    pub fn into_paragraph(self) -> Option<P> {
+        match self {
+            Link::Uses(UsedLink { paragraph, .. }) => paragraph,
+            Link::Defines(DefinedLink { paragraph, .. }) => paragraph,
+        }
+    }
 }
 
 pub struct Document<'a> {
@@ -176,11 +185,11 @@ impl<'a> Document<'a> {
         Href(href.into_bump_str())
     }
 
-    pub fn links<'b, 'link>(
+    pub fn links<'b, 'link, P: ParagraphWalker>(
         &self,
         arena: &'b bumpalo::Bump,
         xml_buf: &mut Vec<u8>,
-        sink: &mut Vec<Link<'link>>,
+        sink: &mut Vec<Link<'link, P::Paragraph>>,
         check_anchors: bool,
         get_paragraphs: bool,
     ) -> Result<(), Error>
@@ -188,7 +197,7 @@ impl<'a> Document<'a> {
         'a: 'link,
         'b: 'link,
     {
-        self.links_from_read(
+        self.links_from_read::<_, P>(
             arena,
             xml_buf,
             sink,
@@ -198,12 +207,12 @@ impl<'a> Document<'a> {
         )
     }
 
-    fn links_from_read<'b, 'link>(
+    fn links_from_read<'b, 'link, R: Read, P: ParagraphWalker>(
         &self,
         arena: &'b bumpalo::Bump,
         xml_buf: &mut Vec<u8>,
-        sink: &mut Vec<Link<'link>>,
-        read: impl Read,
+        sink: &mut Vec<Link<'link, P::Paragraph>>,
+        read: R,
         check_anchors: bool,
         get_paragraphs: bool,
     ) -> Result<(), Error>
@@ -216,7 +225,7 @@ impl<'a> Document<'a> {
         reader.expand_empty_elements(true);
         reader.check_end_names(false);
 
-        let mut hasher = ParagraphHasher::new();
+        let mut paragraph_walker = P::new();
 
         let mut last_paragraph_i = sink.len();
         let mut in_paragraph = false;
@@ -228,6 +237,7 @@ impl<'a> Document<'a> {
                     if PARAGRAPH_TAGS.contains(&e.name()) {
                         in_paragraph = true;
                         last_paragraph_i = sink.len();
+                        paragraph_walker.finish_paragraph();
                     }
 
                     macro_rules! extract_used_link {
@@ -297,23 +307,25 @@ impl<'a> Document<'a> {
                 }
                 Event::End(e) if get_paragraphs => {
                     if PARAGRAPH_TAGS.contains(&e.name()) {
-                        let paragraph = hasher.finish_paragraph();
-                        for link in &mut sink[last_paragraph_i..] {
-                            match link {
-                                Link::Defines(ref mut x) => {
-                                    x.paragraph = Some(paragraph);
-                                }
-                                Link::Uses(ref mut x) => {
-                                    x.paragraph = Some(paragraph);
+                        let paragraph = paragraph_walker.finish_paragraph();
+                        if in_paragraph {
+                            for link in &mut sink[last_paragraph_i..] {
+                                match link {
+                                    Link::Defines(ref mut x) => {
+                                        x.paragraph = Some(paragraph.clone());
+                                    }
+                                    Link::Uses(ref mut x) => {
+                                        x.paragraph = Some(paragraph.clone());
+                                    }
                                 }
                             }
+                            in_paragraph = false;
                         }
-                        in_paragraph = false;
                         last_paragraph_i = sink.len();
                     }
                 }
                 Event::Text(e) if get_paragraphs && in_paragraph => {
-                    hasher.update(str::from_utf8(&e.unescaped()?)?);
+                    paragraph_walker.update(str::from_utf8(&e.unescaped()?)?);
                 }
                 _ => {}
             }
@@ -340,10 +352,7 @@ fn test_document_href() {
         Path::new("public/platforms/python/troubleshooting.html"),
     );
 
-    assert_eq!(
-        doc.href,
-        Href("platforms/python/troubleshooting.html")
-    );
+    assert_eq!(doc.href, Href("platforms/python/troubleshooting.html"));
 }
 
 #[test]

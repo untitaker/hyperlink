@@ -4,7 +4,7 @@ mod paragraph;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 
 use anyhow::{anyhow, Context, Error};
@@ -15,6 +15,10 @@ use structopt::StructOpt;
 use walkdir::WalkDir;
 
 use html::{Document, Href, Link};
+use paragraph::{DebugParagraphWalker, ParagraphHasher};
+
+static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
+static HTML_FILES: &[&str] = &["htm", "html"];
 
 #[derive(StructOpt)]
 #[structopt(name = "hyperlink")]
@@ -23,8 +27,8 @@ struct Cli {
     ///
     /// This will be assumed to be the root path of your server as well, so
     /// href="/foo" will resolve to that folder's subfolder foo.
-    #[structopt(verbatim_doc_comment)]
-    base_path: PathBuf,
+    #[structopt(verbatim_doc_comment, required_if("subcommand", "Some"))]
+    base_path: Option<PathBuf>,
 
     /// How many threads to use, default is to try and saturate CPU.
     #[structopt(short = "j", long = "jobs")]
@@ -41,6 +45,28 @@ struct Cli {
     /// Enable specialized output for GitHub actions.
     #[structopt(long = "github-actions")]
     github_actions: bool,
+
+    /// Utilities for development of hyperlink.
+    #[structopt(subcommand)]
+    subcommand: Option<Subcommand>,
+}
+
+#[derive(StructOpt)]
+enum Subcommand {
+    /// Dump out internal data for markdown or html file. This is mostly useful to figure out why
+    /// a source file is not properly matched up with its target html file.
+    ///
+    /// Usage:
+    ///
+    ///    vimdiff <(hyperlink dump-paragraphs src/foo.md) <(hyperlink dump-paragraphs public/foo.html)
+    ///
+    /// Each line on the left represents a Markdown paragraph. Each line on the right represents a
+    /// HTML paragraph. If there are minor formatting differences in two lines that are supposed to
+    /// match, you found the issue that needs fixing in `src/paragraph.rs`.
+    ///
+    /// Note that the output for HTML omits paragraphs that do not have links, while for Markdown
+    /// all paragraphs are dumped.
+    DumpParagraphs { file: PathBuf },
 }
 
 fn main() -> Result<(), Error> {
@@ -50,7 +76,15 @@ fn main() -> Result<(), Error> {
         check_anchors,
         sources_path,
         github_actions,
+        subcommand,
     } = Cli::from_args();
+
+    match subcommand {
+        Some(Subcommand::DumpParagraphs { file }) => return dump_paragraphs(file),
+        None => {}
+    }
+
+    let base_path = base_path.unwrap();
 
     if let Some(n) = threads {
         rayon::ThreadPoolBuilder::new()
@@ -92,7 +126,8 @@ fn main() -> Result<(), Error> {
         if document
             .path
             .extension()
-            .map_or(false, |extension| extension == "html" || extension == "htm")
+            .and_then(|extension| Some(HTML_FILES.contains(&extension.to_str()?)))
+            .unwrap_or(false)
         {
             documents.push(document);
         }
@@ -112,7 +147,7 @@ fn main() -> Result<(), Error> {
             || (Vec::new(), Vec::new()),
             |(mut xml_buf, mut sink), document| {
                 document
-                    .links(
+                    .links::<ParagraphHasher>(
                         arenas.get_or_default(),
                         &mut xml_buf,
                         &mut sink,
@@ -171,7 +206,8 @@ fn main() -> Result<(), Error> {
             if source
                 .path
                 .extension()
-                .map_or(false, |extension| extension == "mdx" || extension == "md")
+                .and_then(|extension| Some(MARKDOWN_FILES.contains(&extension.to_str()?)))
+                .unwrap_or(false)
             {
                 document_sources.push(source);
             }
@@ -187,7 +223,7 @@ fn main() -> Result<(), Error> {
             .par_iter()
             .map(|source| -> Result<_, Error> {
                 let paragraphs = source
-                    .paragraphs()
+                    .paragraphs::<ParagraphHasher>()
                     .with_context(|| format!("Failed to read file {}", source.path.display()))?;
                 Ok((source, paragraphs))
             })
@@ -320,4 +356,45 @@ fn print_github_actions_href_list(hrefs: &[Href]) {
         // https://github.community/t/what-is-the-correct-character-escaping-for-workflow-command-values-e-g-echo-xxxx/118465/5
         print!("%0A  {}", href);
     }
+}
+
+fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
+    let arena = bumpalo::Bump::new();
+
+    let extension = match path.extension() {
+        Some(x) => x,
+        None => return Err(anyhow!("File has no extension, cannot determine type")),
+    };
+
+    let paragraphs: BTreeSet<_> = match extension.to_str() {
+        Some(x) if MARKDOWN_FILES.contains(&x) => {
+            let source = DocumentSource::new(path);
+            source
+                .paragraphs::<DebugParagraphWalker<ParagraphHasher>>()?
+                .into_iter()
+                .collect()
+        }
+        Some(x) if HTML_FILES.contains(&x) => {
+            let document = Document::new(&arena, Path::new(""), &path);
+            let mut links = Vec::new();
+            document.links::<DebugParagraphWalker<ParagraphHasher>>(
+                &arena,
+                &mut Vec::new(),
+                &mut links,
+                false,
+                true,
+            )?;
+            links
+                .into_iter()
+                .filter_map(|link| link.into_paragraph())
+                .collect()
+        }
+        _ => return Err(anyhow!("Unknown file extension")),
+    };
+
+    for paragraph in paragraphs {
+        println!("{}", paragraph);
+    }
+
+    Ok(())
 }
