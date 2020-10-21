@@ -64,6 +64,9 @@ enum Subcommand {
     /// HTML paragraph. If there are minor formatting differences in two lines that are supposed to
     /// match, you found the issue that needs fixing in `src/paragraph.rs`.
     ///
+    /// There may also be entire lines missing from either side, in which case the logic for
+    /// detecting paragraphs needs adjustment, either in `src/markdown.rs` or `src/html.rs`.
+    ///
     /// Note that the output for HTML omits paragraphs that do not have links, while for Markdown
     /// all paragraphs are dumped.
     DumpParagraphs { file: PathBuf },
