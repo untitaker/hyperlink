@@ -19,10 +19,9 @@ pub trait ParagraphWalker {
     fn finish_paragraph(&mut self) -> Self::Paragraph;
 
     fn update(&mut self, text: &str) {
-        for word in text.trim().split(' ') {
+        for word in text.trim().split_whitespace() {
             if !word.is_empty() {
-                self.update_raw(word.trim_end());
-                self.update_raw(" ");
+                self.update_raw(word.trim());
             }
         }
     }
