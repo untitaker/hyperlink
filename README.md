@@ -93,35 +93,31 @@ links. However, it can do more.
 
 ## Alternatives
 
-* [linkcheck](https://github.com/filiph/linkcheck) has slightly above-average
-  performance, great UX and a good set of features (more than hyperlink). Other
-  than performance it worked really well for our usecase, and `hyperlink` takes
-  some minor UX decisions from linkchecker here and there.
-
-  We tried `linkcheck` together with
-  [`http-server`](https://www.npmjs.com/package/http-server) on localhost,
-  although that does not seem to be the bottleneck.
-
 * [wummel/linkchecker](https://wummel.github.io/linkchecker/) seems to be the
   most feature rich out of all, but was a non-starter due to performance. This
   applies to other countless link checkers we tried that are not mentioned
   here.
 
-* [Legend of Link](https://github.com/XMPPwocky/legend_of_link) is a link
-  checker in Rust. `hyperlink` takes the idea of directly using a html/xml
-  tokenizer from there, but does not share any code with it. We haven't been
-  able to get Legend of Link running at all.
+* [linkcheck](https://github.com/filiph/linkcheck) is faster than `linkchecker`
+  but still quite slow on large sites.
+
+  We tried `linkcheck` together with
+  [`http-server`](https://www.npmjs.com/package/http-server) on localhost,
+  although that does not seem to be the bottleneck at all.
 
 * [htmltest](https://github.com/wjdp/htmltest) is one of the fastest
   linkcheckers we've tried (after disabling most checks to ensure feature
   parity with `hyperlink`), however is still slower than `hyperlink` in
   single-threaded mode (`-j 1`)
 
-* [liche](https://github.com/raviqqe/liche) and
-  [muffet](https://github.com/raviqqe/muffet) seems to have similar performance
+* [muffet](https://github.com/raviqqe/muffet) seems to have similar performance
   as `htmltest`. We tested `muffet` with
   [`http-server`](https://www.npmjs.com/package/http-server) and webfsd without
   noticing a change in timings.
+
+* [liche](https://github.com/raviqqe/liche) seems to be closest in performance
+  to `hyperlink`. `hyperlink` is generally faster, [except on folders with many
+  small files](https://github.com/untitaker/hyperlink/issues/12).
 
 ## License
 
