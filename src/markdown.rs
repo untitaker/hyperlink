@@ -23,7 +23,7 @@ impl DocumentSource {
         let text_raw = fs::read_to_string(&self.path)?;
         let mut text = String::new();
         for mut line in text_raw.lines() {
-            if line.starts_with("<") {
+            if line.starts_with('<') {
                 continue;
             }
 

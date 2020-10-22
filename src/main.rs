@@ -9,12 +9,12 @@ use std::process;
 
 use anyhow::{anyhow, Context, Error};
 use bumpalo::collections::Vec as BumpVec;
+use jwalk::WalkDir;
 use markdown::DocumentSource;
 use rayon::prelude::*;
 use structopt::StructOpt;
-use walkdir::WalkDir;
 
-use html::{Document, Href, Link};
+use html::{DefinedLink, Document, Href, Link};
 use paragraph::{DebugParagraphWalker, ParagraphHasher};
 
 static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
@@ -82,9 +82,8 @@ fn main() -> Result<(), Error> {
         subcommand,
     } = Cli::from_args();
 
-    match subcommand {
-        Some(Subcommand::DumpParagraphs { file }) => return dump_paragraphs(file),
-        None => {}
+    if let Some(Subcommand::DumpParagraphs { file }) = subcommand {
+        return dump_paragraphs(file);
     }
 
     let base_path = base_path.unwrap();
@@ -99,59 +98,53 @@ fn main() -> Result<(), Error> {
     let arenas = thread_local::ThreadLocal::new();
     let main_arena = arenas.get_or_default();
 
-    let mut defined_links = BTreeSet::new();
-    let mut documents = BumpVec::new_in(&main_arena);
+    println!("Reading files");
 
-    println!("Discovering files");
-
-    for entry in WalkDir::new(&base_path) {
-        let entry = entry?;
-        let metadata = entry.metadata()?;
-        let file_type = metadata.file_type();
-
-        if file_type.is_symlink() {
-            return Err(anyhow!(
-                "Found unsupported symlink at {}",
-                entry.path().display()
-            ));
-        }
-
-        if !file_type.is_file() {
-            continue;
-        }
-
-        let document = Document::new(&main_arena, &base_path, main_arena.alloc(entry.into_path()));
-
-        if !defined_links.insert(document.href) {
-            panic!("Found two files that would probably serve the same href. One of them is {}. Please file a bug with the output of 'find' on your folder.", document.path.display());
-        }
-
-        if document
-            .path
-            .extension()
-            .and_then(|extension| Some(HTML_FILES.contains(&extension.to_str()?)))
-            .unwrap_or(false)
-        {
-            documents.push(document);
-        }
-    }
-
-    println!(
-        "Reading {} out of {} files",
-        documents.len(),
-        defined_links.len()
-    );
-
-    let extracted_links: Vec<Result<_, Error>> = documents
-        .par_iter()
+    let extracted_links: Vec<Result<_, Error>> = WalkDir::new(&base_path)
+        .into_iter()
+        .par_bridge()
         .try_fold(
             // apparently can't use arena allocations here because that would make values !Send
             // also because quick-xml specifically wants std vec
-            || (Vec::new(), Vec::new()),
-            |(mut xml_buf, mut sink), document| {
+            || (Vec::new(), Vec::new(), 0, 0),
+            |(mut xml_buf, mut sink, mut documents_count, mut file_count), entry| {
+                let entry = entry?;
+                let metadata = entry.metadata()?;
+
+                let file_type = metadata.file_type();
+
+                if file_type.is_symlink() {
+                    return Err(anyhow!(
+                        "Found unsupported symlink at {}",
+                        entry.path().display()
+                    ));
+                }
+
+                if !file_type.is_file() {
+                    return Ok((xml_buf, sink, documents_count, file_count));
+                }
+
+                let arena = arenas.get_or_default();
+                let document = Document::new(&arena, &base_path, arena.alloc(entry.path()));
+
+                sink.push(Link::Defines(DefinedLink {
+                    href: document.href,
+                    paragraph: None,
+                }));
+                file_count += 1;
+
+                if !document
+                    .path
+                    .extension()
+                    .and_then(|extension| Some(HTML_FILES.contains(&extension.to_str()?)))
+                    .unwrap_or(false)
+                {
+                    return Ok((xml_buf, sink, documents_count, file_count));
+                }
+
                 document
                     .links::<ParagraphHasher>(
-                        arenas.get_or_default(),
+                        arena,
                         &mut xml_buf,
                         &mut sink,
                         check_anchors,
@@ -161,15 +154,23 @@ fn main() -> Result<(), Error> {
 
                 xml_buf.clear();
 
-                Ok((xml_buf, sink))
+                documents_count += 1;
+
+                Ok((xml_buf, sink, documents_count, file_count))
             },
         )
         .collect();
 
+    let mut defined_links = BTreeSet::new();
     let mut used_links = BTreeMap::new();
+    let mut documents_count = 0;
+    let mut file_count = 0;
 
     for result in extracted_links {
-        let (_xml_buf, link_chunk) = result?;
+        let (_xml_buf, link_chunk, documents_count_chunk, file_count_chunk) = result?;
+        documents_count += documents_count_chunk;
+        file_count += file_count_chunk;
+
         for link in link_chunk {
             match link {
                 Link::Uses(used_link) => {
@@ -204,7 +205,7 @@ fn main() -> Result<(), Error> {
                 continue;
             }
 
-            let source = DocumentSource::new(entry.into_path());
+            let source = DocumentSource::new(entry.path());
 
             if source
                 .path
@@ -244,7 +245,10 @@ fn main() -> Result<(), Error> {
     }
 
     let used_links_len = used_links.len();
-    println!("Checking {} links", used_links_len);
+    println!(
+        "Checking {} links from {} files ({} documents)",
+        used_links_len, file_count, documents_count,
+    );
 
     let mut bad_links_and_anchors = BTreeMap::new();
     let mut bad_links_count = 0;
@@ -335,7 +339,6 @@ fn main() -> Result<(), Error> {
 
     // We're about to exit the program and leaking the memory is faster than running drop
     mem::forget(defined_links);
-    mem::forget(documents);
 
     if bad_links_count > 0 {
         process::exit(1);
