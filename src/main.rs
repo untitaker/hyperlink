@@ -101,6 +101,7 @@ fn main() -> Result<(), Error> {
     println!("Reading files");
 
     let extracted_links: Vec<Result<_, Error>> = WalkDir::new(&base_path)
+        .sort(true) // helps branch predictor (?)
         .into_iter()
         .par_bridge()
         .try_fold(
