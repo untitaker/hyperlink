@@ -416,37 +416,34 @@ fn extract_markdown_paragraphs<'a>(
 
     let results: Vec<Result<_, Error>> = entries
         .into_par_iter()
-        .try_fold(
-            Vec::new,
-            |mut paragraphs, entry| {
-                let entry = entry?;
-                let metadata = entry.metadata()?;
-                let file_type = metadata.file_type();
+        .try_fold(Vec::new, |mut paragraphs, entry| {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+            let file_type = metadata.file_type();
 
-                if !file_type.is_file() {
-                    return Ok(paragraphs);
-                }
+            if !file_type.is_file() {
+                return Ok(paragraphs);
+            }
 
-                let source = DocumentSource::new(entry.path());
+            let source = DocumentSource::new(entry.path());
 
-                if !source
-                    .path
-                    .extension()
-                    .and_then(|extension| Some(MARKDOWN_FILES.contains(&extension.to_str()?)))
-                    .unwrap_or(false)
-                {
-                    return Ok(paragraphs);
-                }
+            if !source
+                .path
+                .extension()
+                .and_then(|extension| Some(MARKDOWN_FILES.contains(&extension.to_str()?)))
+                .unwrap_or(false)
+            {
+                return Ok(paragraphs);
+            }
 
-                for paragraph in source
-                    .paragraphs::<ParagraphHasher>()
-                    .with_context(|| format!("Failed to read file {}", source.path.display()))?
-                {
-                    paragraphs.push((source.clone(), paragraph));
-                }
-                Ok(paragraphs)
-            },
-        )
+            for paragraph in source
+                .paragraphs::<ParagraphHasher>()
+                .with_context(|| format!("Failed to read file {}", source.path.display()))?
+            {
+                paragraphs.push((source.clone(), paragraph));
+            }
+            Ok(paragraphs)
+        })
         .collect();
 
     let mut paragraps_to_sourcefile = BTreeMap::new();
