@@ -9,13 +9,15 @@ use std::process;
 
 use anyhow::{anyhow, Context, Error};
 use bumpalo::collections::Vec as BumpVec;
+use bumpalo::Bump;
 use jwalk::WalkDir;
 use markdown::DocumentSource;
 use rayon::prelude::*;
 use structopt::StructOpt;
+use thread_local::ThreadLocal;
 
-use html::{DefinedLink, Document, Href, Link};
-use paragraph::{DebugParagraphWalker, ParagraphHasher};
+use html::{DefinedLink, Document, Href, Link, UsedLink};
+use paragraph::{DebugParagraphWalker, Paragraph, ParagraphHasher};
 
 static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
 static HTML_FILES: &[&str] = &["htm", "html"];
@@ -27,7 +29,7 @@ struct Cli {
     ///
     /// This will be assumed to be the root path of your server as well, so
     /// href="/foo" will resolve to that folder's subfolder foo.
-    #[structopt(verbatim_doc_comment, required_if("subcommand", "Some"))]
+    #[structopt(verbatim_doc_comment, required_if("subcommand", "None"))]
     base_path: Option<PathBuf>,
 
     /// How many threads to use, default is to try and saturate CPU.
@@ -95,98 +97,13 @@ fn main() -> Result<(), Error> {
             .unwrap();
     }
 
-    let arenas = thread_local::ThreadLocal::new();
+    let arenas = ThreadLocal::new();
     let main_arena = arenas.get_or_default();
 
     println!("Reading files");
 
-    let extracted_links: Vec<Result<_, Error>> = WalkDir::new(&base_path)
-        .sort(true) // helps branch predictor (?)
-        .into_iter()
-        .par_bridge()
-        .try_fold(
-            // apparently can't use arena allocations here because that would make values !Send
-            // also because quick-xml specifically wants std vec
-            || (Vec::new(), Vec::new(), 0, 0),
-            |(mut xml_buf, mut sink, mut documents_count, mut file_count), entry| {
-                let entry = entry?;
-                let metadata = entry.metadata()?;
-
-                let file_type = metadata.file_type();
-
-                if file_type.is_symlink() {
-                    return Err(anyhow!(
-                        "Found unsupported symlink at {}",
-                        entry.path().display()
-                    ));
-                }
-
-                if !file_type.is_file() {
-                    return Ok((xml_buf, sink, documents_count, file_count));
-                }
-
-                let arena = arenas.get_or_default();
-                let document = Document::new(&arena, &base_path, arena.alloc(entry.path()));
-
-                sink.push(Link::Defines(DefinedLink {
-                    href: document.href,
-                    paragraph: None,
-                }));
-                file_count += 1;
-
-                if !document
-                    .path
-                    .extension()
-                    .and_then(|extension| Some(HTML_FILES.contains(&extension.to_str()?)))
-                    .unwrap_or(false)
-                {
-                    return Ok((xml_buf, sink, documents_count, file_count));
-                }
-
-                document
-                    .links::<ParagraphHasher>(
-                        arena,
-                        &mut xml_buf,
-                        &mut sink,
-                        check_anchors,
-                        sources_path.is_some(),
-                    )
-                    .with_context(|| format!("Failed to read file {}", document.path.display()))?;
-
-                xml_buf.clear();
-
-                documents_count += 1;
-
-                Ok((xml_buf, sink, documents_count, file_count))
-            },
-        )
-        .collect();
-
-    let mut defined_links = BTreeSet::new();
-    let mut used_links = BTreeMap::new();
-    let mut documents_count = 0;
-    let mut file_count = 0;
-
-    for result in extracted_links {
-        let (_xml_buf, link_chunk, documents_count_chunk, file_count_chunk) = result?;
-        documents_count += documents_count_chunk;
-        file_count += file_count_chunk;
-
-        for link in link_chunk {
-            match link {
-                Link::Uses(used_link) => {
-                    used_links
-                        .entry(used_link.href)
-                        .or_insert_with(|| BumpVec::new_in(main_arena))
-                        .push(used_link);
-                }
-                Link::Defines(defined_link) => {
-                    // XXX: Use whole link
-                    defined_links.insert(defined_link.href);
-                }
-            }
-        }
-    }
+    let html_result =
+        extract_html_links(&arenas, &base_path, check_anchors, sources_path.is_some())?;
 
     let mut paragraps_to_sourcefile = BTreeMap::new();
 
@@ -245,19 +162,20 @@ fn main() -> Result<(), Error> {
         }
     }
 
-    let used_links_len = used_links.len();
+    let used_links_len = html_result.used_links.len();
     println!(
         "Checking {} links from {} files ({} documents)",
-        used_links_len, file_count, documents_count,
+        used_links_len, html_result.file_count, html_result.documents_count,
     );
 
     let mut bad_links_and_anchors = BTreeMap::new();
     let mut bad_links_count = 0;
     let mut bad_anchors_count = 0;
 
-    for (href, links) in used_links {
-        if !defined_links.contains(&href) {
-            let hard_404 = !check_anchors || !defined_links.contains(&href.without_anchor());
+    for (&href, links) in &html_result.used_links {
+        if !html_result.defined_links.contains(&href) {
+            let hard_404 =
+                !check_anchors || !html_result.defined_links.contains(&href.without_anchor());
             if hard_404 {
                 bad_links_count += 1;
             } else {
@@ -339,7 +257,7 @@ fn main() -> Result<(), Error> {
     }
 
     // We're about to exit the program and leaking the memory is faster than running drop
-    mem::forget(defined_links);
+    mem::forget(html_result);
 
     if bad_links_count > 0 {
         process::exit(1);
@@ -362,7 +280,7 @@ fn print_github_actions_href_list(hrefs: &BTreeSet<Href<'_>>) {
 }
 
 fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
-    let arena = bumpalo::Bump::new();
+    let arena = Bump::new();
 
     let extension = match path.extension() {
         Some(x) => x,
@@ -400,4 +318,120 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+struct HtmlResult<'a> {
+    used_links: BTreeMap<Href<'a>, BumpVec<'a, UsedLink<'a, Paragraph>>>,
+    defined_links: BTreeSet<Href<'a>>,
+    documents_count: usize,
+    file_count: usize,
+}
+
+fn extract_html_links<'a>(
+    arenas: &'a ThreadLocal<Bump>,
+    base_path: &Path,
+    check_anchors: bool,
+    get_paragraphs: bool,
+) -> Result<HtmlResult<'a>, Error> {
+    let entries = WalkDir::new(&base_path)
+        .sort(true) // helps branch predictor (?)
+        .into_iter()
+        // XXX: cannot use par_bridge because of https://github.com/rayon-rs/rayon/issues/690
+        // Alternatively it appears that inlining this function works too
+        .collect::<Vec<_>>();
+
+    let extracted_links: Vec<Result<_, Error>> = entries
+        .into_par_iter()
+        .try_fold(
+            // apparently can't use arena allocations here because that would make values !Send
+            // also because quick-xml specifically wants std vec
+            || (Vec::new(), Vec::new(), 0, 0),
+            |(mut xml_buf, mut sink, mut documents_count, mut file_count), entry| {
+                let entry = entry?;
+                let metadata = entry.metadata()?;
+
+                let file_type = metadata.file_type();
+
+                if file_type.is_symlink() {
+                    return Err(anyhow!(
+                        "Found unsupported symlink at {}",
+                        entry.path().display()
+                    ));
+                }
+
+                if !file_type.is_file() {
+                    return Ok((xml_buf, sink, documents_count, file_count));
+                }
+
+                let arena = arenas.get_or_default();
+                let document = Document::new(&arena, &base_path, arena.alloc(entry.path()));
+
+                sink.push(Link::Defines(DefinedLink {
+                    href: document.href,
+                    paragraph: None,
+                }));
+                file_count += 1;
+
+                if !document
+                    .path
+                    .extension()
+                    .and_then(|extension| Some(HTML_FILES.contains(&extension.to_str()?)))
+                    .unwrap_or(false)
+                {
+                    return Ok((xml_buf, sink, documents_count, file_count));
+                }
+
+                document
+                    .links::<ParagraphHasher>(
+                        arena,
+                        &mut xml_buf,
+                        &mut sink,
+                        check_anchors,
+                        get_paragraphs,
+                    )
+                    .with_context(|| format!("Failed to read file {}", document.path.display()))?;
+
+                xml_buf.clear();
+
+                documents_count += 1;
+
+                Ok((xml_buf, sink, documents_count, file_count))
+            },
+        )
+        .collect();
+
+    let mut defined_links = BTreeSet::new();
+    let mut used_links = BTreeMap::new();
+    let mut documents_count = 0;
+    let mut file_count = 0;
+
+    let main_arena = arenas.get_or_default();
+
+    for result in extracted_links {
+        let (_xml_buf, link_chunk, documents_count_chunk, file_count_chunk) = result?;
+        documents_count += documents_count_chunk;
+        file_count += file_count_chunk;
+
+        for link in link_chunk {
+            match link {
+                Link::Uses(used_link) => {
+                    used_links
+                        .entry(used_link.href)
+                        .or_insert_with(|| BumpVec::new_in(main_arena))
+                        .push(used_link);
+                }
+                Link::Defines(defined_link) => {
+                    // XXX: Use whole link
+                    defined_links.insert(defined_link.href);
+                }
+            }
+        }
+    }
+
+    Ok(HtmlResult {
+        defined_links,
+        used_links,
+        documents_count,
+        file_count,
+    })
 }
