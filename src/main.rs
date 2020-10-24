@@ -98,69 +98,18 @@ fn main() -> Result<(), Error> {
     }
 
     let arenas = ThreadLocal::new();
-    let main_arena = arenas.get_or_default();
 
     println!("Reading files");
 
     let html_result =
         extract_html_links(&arenas, &base_path, check_anchors, sources_path.is_some())?;
 
-    let mut paragraps_to_sourcefile = BTreeMap::new();
-
-    if let Some(ref sources_path) = sources_path {
+    let paragraps_to_sourcefile = if let Some(ref sources_path) = sources_path {
         println!("Discovering source files");
-
-        let mut file_count = 0;
-        let mut document_sources = BumpVec::new_in(&main_arena);
-
-        for entry in WalkDir::new(sources_path) {
-            file_count += 1;
-            let entry = entry?;
-            let metadata = entry.metadata()?;
-            let file_type = metadata.file_type();
-
-            if !file_type.is_file() {
-                continue;
-            }
-
-            let source = DocumentSource::new(entry.path());
-
-            if source
-                .path
-                .extension()
-                .and_then(|extension| Some(MARKDOWN_FILES.contains(&extension.to_str()?)))
-                .unwrap_or(false)
-            {
-                document_sources.push(source);
-            }
-        }
-
-        println!(
-            "Checking {} out of {} files in source folder",
-            document_sources.len(),
-            file_count
-        );
-
-        let results: Vec<_> = document_sources
-            .par_iter()
-            .map(|source| -> Result<_, Error> {
-                let paragraphs = source
-                    .paragraphs::<ParagraphHasher>()
-                    .with_context(|| format!("Failed to read file {}", source.path.display()))?;
-                Ok((source, paragraphs))
-            })
-            .collect();
-
-        for result in results {
-            let (source, paragraphs) = result?;
-            for paragraph in paragraphs {
-                paragraps_to_sourcefile
-                    .entry(paragraph)
-                    .or_insert_with(|| BumpVec::new_in(main_arena))
-                    .push(source.clone());
-            }
-        }
-    }
+        extract_markdown_paragraphs(&arenas, sources_path)?
+    } else {
+        BTreeMap::new()
+    };
 
     let used_links_len = html_result.used_links.len();
     println!(
@@ -337,7 +286,6 @@ fn extract_html_links<'a>(
         .sort(true) // helps branch predictor (?)
         .into_iter()
         // XXX: cannot use par_bridge because of https://github.com/rayon-rs/rayon/issues/690
-        // Alternatively it appears that inlining this function works too
         .collect::<Vec<_>>();
 
     let extracted_links: Vec<Result<_, Error>> = entries
@@ -432,4 +380,57 @@ fn extract_html_links<'a>(
         documents_count,
         file_count,
     })
+}
+
+type MarkdownResult<'a> = BTreeMap<Paragraph, BumpVec<'a, DocumentSource>>;
+
+fn extract_markdown_paragraphs<'a>(
+    arenas: &'a ThreadLocal<Bump>,
+    sources_path: &Path,
+) -> Result<MarkdownResult<'a>, Error> {
+    let entries = WalkDir::new(sources_path)
+        .sort(true) // helps branch predictor (?)
+        .into_iter()
+        // XXX: cannot use par_bridge because of https://github.com/rayon-rs/rayon/issues/690
+        .collect::<Vec<_>>();
+
+    let results: Vec<Result<_, Error>> = entries
+        .into_par_iter()
+        .try_fold(
+            || (Vec::new()),
+            |mut paragraphs, entry| {
+                let entry = entry?;
+                let metadata = entry.metadata()?;
+                let file_type = metadata.file_type();
+
+                if !file_type.is_file() {
+                    return Ok(paragraphs);
+                }
+
+                let source = DocumentSource::new(entry.path());
+
+                for paragraph in source
+                    .paragraphs::<ParagraphHasher>()
+                    .with_context(|| format!("Failed to read file {}", source.path.display()))?
+                {
+                    paragraphs.push((source.clone(), paragraph));
+                }
+                Ok(paragraphs)
+            },
+        )
+        .collect();
+
+    let mut paragraps_to_sourcefile = BTreeMap::new();
+    let main_arena = arenas.get_or_default();
+
+    for result in results {
+        for (source, paragraph) in result? {
+            paragraps_to_sourcefile
+                .entry(paragraph)
+                .or_insert_with(|| BumpVec::new_in(main_arena))
+                .push(source.clone());
+        }
+    }
+
+    Ok(paragraps_to_sourcefile)
 }
