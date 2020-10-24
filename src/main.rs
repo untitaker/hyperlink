@@ -368,7 +368,6 @@ fn extract_html_links<'a>(
 
                 sink.push(Link::Defines(DefinedLink {
                     href: document.href,
-                    paragraph: None,
                 }));
                 file_count += 1;
 
@@ -421,7 +420,6 @@ fn extract_html_links<'a>(
                         .push(used_link);
                 }
                 Link::Defines(defined_link) => {
-                    // XXX: Use whole link
                     defined_links.insert(defined_link.href);
                 }
             }

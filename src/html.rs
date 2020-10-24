@@ -97,22 +97,21 @@ pub struct UsedLink<'a, P> {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct DefinedLink<'a, P> {
+pub struct DefinedLink<'a> {
     pub href: Href<'a>,
-    pub paragraph: Option<P>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Link<'a, P> {
     Uses(UsedLink<'a, P>),
-    Defines(DefinedLink<'a, P>),
+    Defines(DefinedLink<'a>),
 }
 
 impl<'a, P> Link<'a, P> {
     pub fn into_paragraph(self) -> Option<P> {
         match self {
             Link::Uses(UsedLink { paragraph, .. }) => paragraph,
-            Link::Defines(DefinedLink { paragraph, .. }) => paragraph,
+            Link::Defines(_) => None,
         }
     }
 }
@@ -281,7 +280,6 @@ impl<'a> Document<'a> {
                                                 check_anchors,
                                                 href.into_bump_str(),
                                             ),
-                                            paragraph: None,
                                         }));
                                     }
                                 }
@@ -311,12 +309,10 @@ impl<'a> Document<'a> {
                         if in_paragraph {
                             for link in &mut sink[last_paragraph_i..] {
                                 match link {
-                                    Link::Defines(ref mut x) => {
-                                        x.paragraph = Some(paragraph.clone());
-                                    }
                                     Link::Uses(ref mut x) => {
                                         x.paragraph = Some(paragraph.clone());
                                     }
+                                    Link::Defines(_) => {}
                                 }
                             }
                             in_paragraph = false;
