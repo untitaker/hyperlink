@@ -55,6 +55,8 @@ struct Cli {
 
 #[derive(StructOpt)]
 enum Subcommand {
+    /// NOTE: This is a tool for debugging and development.
+    ///
     /// Dump out internal data for markdown or html file. This is mostly useful to figure out why
     /// a source file is not properly matched up with its target html file.
     ///
@@ -72,6 +74,15 @@ enum Subcommand {
     /// Note that the output for HTML omits paragraphs that do not have links, while for Markdown
     /// all paragraphs are dumped.
     DumpParagraphs { file: PathBuf },
+
+    /// NOTE: This is a tool for debugging and development.
+    ///
+    /// Attempt to match up all paragraphs from the HTML folder with the Markdown folder and print
+    /// stats. This can be used to determine whether the source matching is going to be any good.
+    MatchAllParagraphs {
+        base_path: PathBuf,
+        sources_path: PathBuf,
+    },
 }
 
 fn main() -> Result<(), Error> {
@@ -84,18 +95,27 @@ fn main() -> Result<(), Error> {
         subcommand,
     } = Cli::from_args();
 
-    if let Some(Subcommand::DumpParagraphs { file }) = subcommand {
-        return dump_paragraphs(file);
-    }
-
-    let base_path = base_path.unwrap();
-
     if let Some(n) = threads {
         rayon::ThreadPoolBuilder::new()
             .num_threads(n)
             .build_global()
             .unwrap();
     }
+
+    match subcommand {
+        Some(Subcommand::DumpParagraphs { file }) => {
+            return dump_paragraphs(file);
+        }
+        Some(Subcommand::MatchAllParagraphs {
+            base_path,
+            sources_path,
+        }) => {
+            return match_all_paragraphs(base_path, sources_path);
+        }
+        None => {}
+    }
+
+    let base_path = base_path.unwrap();
 
     let arenas = ThreadLocal::new();
 
@@ -105,7 +125,7 @@ fn main() -> Result<(), Error> {
         extract_html_links(&arenas, &base_path, check_anchors, sources_path.is_some())?;
 
     let paragraps_to_sourcefile = if let Some(ref sources_path) = sources_path {
-        println!("Discovering source files");
+        println!("Reading source files");
         extract_markdown_paragraphs(&arenas, sources_path)?
     } else {
         BTreeMap::new()
@@ -409,6 +429,15 @@ fn extract_markdown_paragraphs<'a>(
 
                 let source = DocumentSource::new(entry.path());
 
+                if !source
+                    .path
+                    .extension()
+                    .and_then(|extension| Some(MARKDOWN_FILES.contains(&extension.to_str()?)))
+                    .unwrap_or(false)
+                {
+                    return Ok(paragraphs);
+                }
+
                 for paragraph in source
                     .paragraphs::<ParagraphHasher>()
                     .with_context(|| format!("Failed to read file {}", source.path.display()))?
@@ -433,4 +462,58 @@ fn extract_markdown_paragraphs<'a>(
     }
 
     Ok(paragraps_to_sourcefile)
+}
+
+fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(), Error> {
+    let arenas = ThreadLocal::new();
+
+    println!("Reading files");
+    let html_result = extract_html_links(&arenas, &base_path, true, true)?;
+
+    println!("Reading source files");
+    let paragraps_to_sourcefile = extract_markdown_paragraphs(&arenas, &sources_path)?;
+
+    println!("Calculating");
+    let mut total_links = 0;
+    let mut link_no_paragraph = 0;
+    let mut link_multiple_sources = 0;
+    let mut link_no_source = 0;
+    // We only care about HTML's used links because paragraph matching is exclusively for error
+    // messages that point to the broken link.
+    for (href, links) in &html_result.used_links {
+        for link in links {
+            total_links += 1;
+
+            let paragraph = match link.paragraph {
+                Some(ref p) => p,
+                None => {
+                    link_no_paragraph += 1;
+                    continue;
+                }
+            };
+
+            match paragraps_to_sourcefile.get(paragraph) {
+                Some(sources) => {
+                    if sources.len() != 1 {
+                        println!("multiple sources: {} in {}", href, link.path.display());
+                        link_multiple_sources += 1;
+                    }
+                }
+                None => {
+                    println!("no source: {} in {}", href, link.path.display());
+                    link_no_source += 1;
+                }
+            }
+        }
+    }
+
+    println!("{} total links", total_links);
+    println!("{} links outside of paragraphs", link_no_paragraph);
+    println!(
+        "{} links with multiple potential sources",
+        link_multiple_sources
+    );
+    println!("{} links with no sources", link_no_source);
+
+    Ok(())
 }
