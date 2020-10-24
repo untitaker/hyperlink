@@ -417,7 +417,7 @@ fn extract_markdown_paragraphs<'a>(
     let results: Vec<Result<_, Error>> = entries
         .into_par_iter()
         .try_fold(
-            || (Vec::new()),
+            Vec::new,
             |mut paragraphs, entry| {
                 let entry = entry?;
                 let metadata = entry.metadata()?;
