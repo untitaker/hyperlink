@@ -321,7 +321,9 @@ impl<'a> Document<'a> {
                     }
                 }
                 Event::Text(e) if get_paragraphs && in_paragraph => {
-                    paragraph_walker.update(str::from_utf8(&e.unescaped()?)?);
+                    // XXX: Unescape properly https://github.com/tafia/quick-xml/issues/238
+                    let text = e.unescaped().unwrap_or_else(|_| e.escaped().into());
+                    paragraph_walker.update(str::from_utf8(&text)?);
                 }
                 _ => {}
             }
