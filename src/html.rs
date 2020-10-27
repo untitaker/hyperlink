@@ -21,9 +21,14 @@ static PARAGRAPH_TAGS: &[&[u8]] = &[b"p", b"li", b"dt", b"dd"];
 fn push_and_canonicalize(base: &mut BumpString<'_>, path: &str) {
     if path.starts_with('/') {
         base.clear();
+    } else if path.is_empty() {
+        if base.ends_with('/') {
+            base.truncate(base.len() - 1);
+        }
+        return;
+    } else {
+        base.truncate(base.rfind('/').unwrap_or(0));
     }
-
-    base.truncate(base.rfind('/').unwrap_or(0));
 
     for component in path.split('/') {
         match component {
@@ -66,6 +71,19 @@ fn test_push_and_canonicalize3() {
     let path = "./2014/article.html";
     push_and_canonicalize(&mut base, path);
     assert_eq!(base, "2014/article.html");
+}
+
+#[test]
+fn test_push_and_canonicalize_empty_href() {
+    let arena = bumpalo::Bump::new();
+    let mut base = BumpString::from_str_in("./foo/install.html", &arena);
+    let path = "";
+    push_and_canonicalize(&mut base, path);
+    assert_eq!(base, "./foo/install.html");
+
+    let mut base = BumpString::from_str_in("./foo/", &arena);
+    push_and_canonicalize(&mut base, path);
+    assert_eq!(base, "./foo");
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
