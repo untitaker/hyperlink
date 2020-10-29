@@ -1,6 +1,6 @@
 use std::fs;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Write, BufWriter};
 use std::path::Path;
 
 use anyhow::Error;
@@ -49,7 +49,7 @@ fn main() -> Result<(), Error> {
             fs::create_dir_all(parent)?;
         }
 
-        let mut file = File::create(path)?;
+        let mut file = BufWriter::new(File::create(path)?);
         for link in (&paths).choose_multiple(&mut rng, link_density) {
             file.write(b"<a href=\"/")?;
             file.write(link.as_bytes())?;
