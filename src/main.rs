@@ -1,3 +1,4 @@
+mod collector;
 mod html;
 mod markdown;
 mod paragraph;
@@ -16,7 +17,8 @@ use rayon::prelude::*;
 use structopt::StructOpt;
 use thread_local::ThreadLocal;
 
-use html::{DefinedLink, Document, Href, Link, UsedLink};
+use collector::{BrokenLinkCollector, LinkCollector, UsedLinkCollector};
+use html::{DefinedLink, Document, Href, Link};
 use paragraph::{DebugParagraphWalker, Paragraph, ParagraphHasher};
 
 static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
@@ -121,8 +123,12 @@ fn main() -> Result<(), Error> {
 
     println!("Reading files");
 
-    let html_result =
-        extract_html_links(&arenas, &base_path, check_anchors, sources_path.is_some())?;
+    let html_result = extract_html_links::<BrokenLinkCollector>(
+        &arenas,
+        &base_path,
+        check_anchors,
+        sources_path.is_some(),
+    )?;
 
     let paragraps_to_sourcefile = if let Some(ref sources_path) = sources_path {
         println!("Reading source files");
@@ -131,7 +137,7 @@ fn main() -> Result<(), Error> {
         BTreeMap::new()
     };
 
-    let used_links_len = html_result.used_links.len();
+    let used_links_len = html_result.collector.used_links_count();
     println!(
         "Checking {} links from {} files ({} documents)",
         used_links_len, html_result.file_count, html_result.documents_count,
@@ -141,42 +147,46 @@ fn main() -> Result<(), Error> {
     let mut bad_links_count = 0;
     let mut bad_anchors_count = 0;
 
-    for (&href, links) in &html_result.used_links {
-        if !html_result.defined_links.contains(&href) {
-            let hard_404 =
-                !check_anchors || !html_result.defined_links.contains(&href.without_anchor());
-            if hard_404 {
-                bad_links_count += 1;
-            } else {
-                bad_anchors_count += 1;
-            }
+    for broken_link in html_result.collector.get_broken_links(check_anchors) {
+        let mut had_sources = false;
 
-            for link in links {
-                let mut had_sources = false;
+        if broken_link.hard_404 {
+            bad_links_count += 1;
+        } else {
+            bad_anchors_count += 1;
+        }
 
-                if let Some(ref paragraph) = link.paragraph {
-                    if let Some(document_sources) = &paragraps_to_sourcefile.get(paragraph) {
-                        debug_assert!(!document_sources.is_empty());
-                        had_sources = true;
+        if let Some(ref paragraph) = broken_link.used_link.paragraph {
+            if let Some(document_sources) = &paragraps_to_sourcefile.get(paragraph) {
+                debug_assert!(!document_sources.is_empty());
+                had_sources = true;
 
-                        for source in *document_sources {
-                            let (bad_links, bad_anchors) = bad_links_and_anchors
-                                .entry((!had_sources, source.path.as_path()))
-                                .or_insert_with(|| (BTreeSet::new(), BTreeSet::new()));
-
-                            if hard_404 { bad_links } else { bad_anchors }.insert(href);
-                        }
-                    }
-                }
-
-                if !had_sources {
+                for source in *document_sources {
                     let (bad_links, bad_anchors) = bad_links_and_anchors
-                        .entry((!had_sources, link.path))
+                        .entry((!had_sources, source.path.as_path()))
                         .or_insert_with(|| (BTreeSet::new(), BTreeSet::new()));
 
-                    if hard_404 { bad_links } else { bad_anchors }.insert(href);
+                    if broken_link.hard_404 {
+                        bad_links
+                    } else {
+                        bad_anchors
+                    }
+                    .insert(broken_link.used_link.href);
                 }
             }
+        }
+
+        if !had_sources {
+            let (bad_links, bad_anchors) = bad_links_and_anchors
+                .entry((!had_sources, broken_link.used_link.path))
+                .or_insert_with(|| (BTreeSet::new(), BTreeSet::new()));
+
+            if broken_link.hard_404 {
+                bad_links
+            } else {
+                bad_anchors
+            }
+            .insert(broken_link.used_link.href);
         }
     }
 
@@ -289,32 +299,32 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
     Ok(())
 }
 
-struct HtmlResult<'a> {
-    used_links: BTreeMap<Href<'a>, BumpVec<'a, UsedLink<'a, Paragraph>>>,
-    defined_links: BTreeSet<Href<'a>>,
+struct HtmlResult<C> {
+    collector: C,
     documents_count: usize,
     file_count: usize,
 }
 
-fn extract_html_links<'a>(
+fn extract_html_links<'a, C: LinkCollector<'a>>(
     arenas: &'a ThreadLocal<Bump>,
     base_path: &Path,
     check_anchors: bool,
     get_paragraphs: bool,
-) -> Result<HtmlResult<'a>, Error> {
+) -> Result<HtmlResult<C>, Error> {
     let entries = WalkDir::new(&base_path)
         .sort(true) // helps branch predictor (?)
         .into_iter()
         // XXX: cannot use par_bridge because of https://github.com/rayon-rs/rayon/issues/690
         .collect::<Vec<_>>();
 
-    let extracted_links: Vec<Result<_, Error>> = entries
+    let result: Result<_, Error> = entries
         .into_par_iter()
         .try_fold(
             // apparently can't use arena allocations here because that would make values !Send
             // also because quick-xml specifically wants std vec
-            || (Vec::new(), Vec::new(), 0, 0),
-            |(mut xml_buf, mut sink, mut documents_count, mut file_count), entry| {
+            || (Vec::new(), Vec::new(), C::new(), 0, 0),
+            |(mut xml_buf, mut link_buf, mut collector, mut documents_count, mut file_count),
+             entry| {
                 let entry = entry?;
                 let metadata = entry.metadata()?;
 
@@ -328,13 +338,13 @@ fn extract_html_links<'a>(
                 }
 
                 if !file_type.is_file() {
-                    return Ok((xml_buf, sink, documents_count, file_count));
+                    return Ok((xml_buf, link_buf, collector, documents_count, file_count));
                 }
 
                 let arena = arenas.get_or_default();
                 let document = Document::new(&arena, &base_path, arena.alloc(entry.path()));
 
-                sink.push(Link::Defines(DefinedLink {
+                collector.ingest(Link::Defines(DefinedLink {
                     href: document.href,
                 }));
                 file_count += 1;
@@ -345,58 +355,51 @@ fn extract_html_links<'a>(
                     .and_then(|extension| Some(HTML_FILES.contains(&extension.to_str()?)))
                     .unwrap_or(false)
                 {
-                    return Ok((xml_buf, sink, documents_count, file_count));
+                    return Ok((xml_buf, link_buf, collector, documents_count, file_count));
                 }
 
                 document
                     .links::<ParagraphHasher>(
                         arena,
                         &mut xml_buf,
-                        &mut sink,
+                        &mut link_buf,
                         check_anchors,
                         get_paragraphs,
                     )
                     .with_context(|| format!("Failed to read file {}", document.path.display()))?;
 
                 xml_buf.clear();
+                for link in link_buf.drain(..) {
+                    collector.ingest(link);
+                }
 
                 documents_count += 1;
 
-                Ok((xml_buf, sink, documents_count, file_count))
+                Ok((xml_buf, link_buf, collector, documents_count, file_count))
             },
         )
-        .collect();
+        .map(|result| {
+            result.map(
+                |(_xml_buf, _link_buf, collector, documents_count, file_count)| {
+                    (collector, documents_count, file_count)
+                },
+            )
+        })
+        .try_reduce(
+            || (C::new(), 0, 0),
+            |(mut collector, mut documents_count, mut file_count),
+             (collector2, documents_count2, file_count2)| {
+                collector.merge(collector2);
+                documents_count += documents_count2;
+                file_count += file_count2;
+                Ok((collector, documents_count, file_count))
+            },
+        );
 
-    let mut defined_links = BTreeSet::new();
-    let mut used_links = BTreeMap::new();
-    let mut documents_count = 0;
-    let mut file_count = 0;
-
-    let main_arena = arenas.get_or_default();
-
-    for result in extracted_links {
-        let (_xml_buf, link_chunk, documents_count_chunk, file_count_chunk) = result?;
-        documents_count += documents_count_chunk;
-        file_count += file_count_chunk;
-
-        for link in link_chunk {
-            match link {
-                Link::Uses(used_link) => {
-                    used_links
-                        .entry(used_link.href)
-                        .or_insert_with(|| BumpVec::new_in(main_arena))
-                        .push(used_link);
-                }
-                Link::Defines(defined_link) => {
-                    defined_links.insert(defined_link.href);
-                }
-            }
-        }
-    }
+    let (collector, documents_count, file_count) = result?;
 
     Ok(HtmlResult {
-        defined_links,
-        used_links,
+        collector,
         documents_count,
         file_count,
     })
@@ -465,7 +468,7 @@ fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(),
     let arenas = ThreadLocal::new();
 
     println!("Reading files");
-    let html_result = extract_html_links(&arenas, &base_path, true, true)?;
+    let html_result = extract_html_links::<UsedLinkCollector>(&arenas, &base_path, true, true)?;
 
     println!("Reading source files");
     let paragraps_to_sourcefile = extract_markdown_paragraphs(&arenas, &sources_path)?;
@@ -477,29 +480,27 @@ fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(),
     let mut link_no_source = 0;
     // We only care about HTML's used links because paragraph matching is exclusively for error
     // messages that point to the broken link.
-    for (href, links) in &html_result.used_links {
-        for link in links {
-            total_links += 1;
+    for link in &html_result.collector.used_links {
+        total_links += 1;
 
-            let paragraph = match link.paragraph {
-                Some(ref p) => p,
-                None => {
-                    link_no_paragraph += 1;
-                    continue;
-                }
-            };
+        let paragraph = match link.paragraph {
+            Some(ref p) => p,
+            None => {
+                link_no_paragraph += 1;
+                continue;
+            }
+        };
 
-            match paragraps_to_sourcefile.get(paragraph) {
-                Some(sources) => {
-                    if sources.len() != 1 {
-                        println!("multiple sources: {} in {}", href, link.path.display());
-                        link_multiple_sources += 1;
-                    }
+        match paragraps_to_sourcefile.get(paragraph) {
+            Some(sources) => {
+                if sources.len() != 1 {
+                    println!("multiple sources: {} in {}", link.href, link.path.display());
+                    link_multiple_sources += 1;
                 }
-                None => {
-                    println!("no source: {} in {}", href, link.path.display());
-                    link_no_source += 1;
-                }
+            }
+            None => {
+                println!("no source: {} in {}", link.href, link.path.display());
+                link_no_source += 1;
             }
         }
     }

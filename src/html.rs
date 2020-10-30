@@ -107,19 +107,19 @@ impl<'a> fmt::Display for Href<'a> {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub struct UsedLink<'a, P> {
     pub href: Href<'a>,
     pub path: &'a Path,
     pub paragraph: Option<P>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub struct DefinedLink<'a> {
     pub href: Href<'a>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Link<'a, P> {
     Uses(UsedLink<'a, P>),
     Defines(DefinedLink<'a>),

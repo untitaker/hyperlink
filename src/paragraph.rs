@@ -2,7 +2,7 @@ use std::fmt;
 use std::hash::Hash;
 use std::mem;
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Paragraph {
     hash: [u8; 32],
 }
