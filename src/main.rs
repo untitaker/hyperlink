@@ -57,10 +57,10 @@ struct Cli {
 
 #[derive(StructOpt)]
 enum Subcommand {
-    /// NOTE: This is a tool for debugging and development.
-    ///
     /// Dump out internal data for markdown or html file. This is mostly useful to figure out why
     /// a source file is not properly matched up with its target html file.
+    ///
+    /// NOTE: This is a tool for debugging and development.
     ///
     /// Usage:
     ///
@@ -77,10 +77,10 @@ enum Subcommand {
     /// all paragraphs are dumped.
     DumpParagraphs { file: PathBuf },
 
-    /// NOTE: This is a tool for debugging and development.
-    ///
     /// Attempt to match up all paragraphs from the HTML folder with the Markdown folder and print
     /// stats. This can be used to determine whether the source matching is going to be any good.
+    ///
+    /// NOTE: This is a tool for debugging and development.
     MatchAllParagraphs {
         base_path: PathBuf,
         sources_path: PathBuf,
