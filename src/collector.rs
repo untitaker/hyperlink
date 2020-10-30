@@ -62,7 +62,8 @@ impl<'a> LinkState<'a> {
 /// Link collector used for actual link checking. Keeps track of broken links only.
 #[derive(Default)]
 pub struct BrokenLinkCollector<'a> {
-    used_links: BTreeMap<Href<'a>, LinkState<'a>>,
+    links: BTreeMap<Href<'a>, LinkState<'a>>,
+    used_link_count: usize,
 }
 
 impl<'a> LinkCollector<'a> for BrokenLinkCollector<'a> {
@@ -73,21 +74,23 @@ impl<'a> LinkCollector<'a> for BrokenLinkCollector<'a> {
     fn ingest(&mut self, link: Link<'a, Paragraph>) {
         match link {
             Link::Uses(used_link) => {
-                self.used_links
+                self.used_link_count += 1;
+                self.links
                     .entry(used_link.href)
                     .or_insert_with(|| LinkState::Undefined(Vec::new()))
                     .add_usage(used_link);
             }
             Link::Defines(defined_link) => {
-                self.used_links
-                    .insert(defined_link.href, LinkState::Defined);
+                self.links.insert(defined_link.href, LinkState::Defined);
             }
         }
     }
 
     fn merge(&mut self, other: Self) {
-        for (href, state) in other.used_links {
-            match self.used_links.entry(href) {
+        self.used_link_count += other.used_link_count;
+
+        for (href, state) in other.links {
+            match self.links.entry(href) {
                 Entry::Occupied(mut entry) => {
                     entry.get_mut().update(state);
                 }
@@ -112,10 +115,10 @@ impl<'a> BrokenLinkCollector<'a> {
     ) -> impl Iterator<Item = BrokenLink<'a, Paragraph>> {
         let mut broken_links = BTreeSet::new();
 
-        for (&href, state) in &self.used_links {
+        for (&href, state) in &self.links {
             if let LinkState::Undefined(links) = state {
                 let hard_404 = if check_anchors {
-                    self.used_links.get(&href.without_anchor()) != Some(&LinkState::Defined)
+                    self.links.get(&href.without_anchor()) != Some(&LinkState::Defined)
                 } else {
                     true
                 };
@@ -133,6 +136,6 @@ impl<'a> BrokenLinkCollector<'a> {
     }
 
     pub fn used_links_count(&self) -> usize {
-        self.used_links.len()
+        self.used_link_count
     }
 }
