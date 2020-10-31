@@ -50,7 +50,8 @@ fn main() -> Result<(), Error> {
         }
 
         let mut file = BufWriter::new(File::create(path)?);
-        for link in (&paths).choose_multiple(&mut rng, link_density) {
+        for _ in 0..link_density {
+            let link = (&paths).choose(&mut rng).unwrap();
             file.write(b"<a href=\"/")?;
             file.write(link.as_bytes())?;
             file.write(b"\">Hey</a>")?;
