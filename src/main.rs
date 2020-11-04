@@ -305,47 +305,66 @@ struct HtmlResult<C> {
     file_count: usize,
 }
 
+fn walk_files(base_path: &Path) -> impl ParallelIterator<Item = jwalk::DirEntry<((), ())>> {
+    let entries = WalkDir::new(&base_path)
+        .sort(true) // helps branch predictor (?)
+        .process_read_dir(|_, children| {
+            children.retain(|dir_entry_result| {
+                let entry = match dir_entry_result.as_ref() {
+                    Ok(x) => x,
+                    Err(_) => return false,
+                };
+
+                let file_type = entry.file_type();
+
+                if file_type.is_dir() {
+                    // need to retain, otherwise jwalk won't recurse
+                    return true;
+                }
+                if file_type.is_symlink() {
+                    return false;
+                }
+
+                if !file_type.is_file() {
+                    return false;
+                }
+
+                true
+            });
+        })
+        .into_iter()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+
+            if entry.file_type().is_dir() {
+                None
+            } else {
+                Some(entry)
+            }
+        })
+        // XXX: cannot use par_bridge because of https://github.com/rayon-rs/rayon/issues/690
+        .collect::<Vec<_>>();
+
+    // Keeping many instances of `C` alive is very memory-intense for large sites. Try to force
+    // rayon to keep only 2 per thread instead. https://github.com/rayon-rs/rayon/issues/742
+    let min_len = entries.len() / (2 * rayon::current_num_threads());
+
+    entries.into_par_iter().with_min_len(min_len)
+}
+
 fn extract_html_links<'a, C: LinkCollector<'a>>(
     arenas: &'a ThreadLocal<Bump>,
     base_path: &Path,
     check_anchors: bool,
     get_paragraphs: bool,
 ) -> Result<HtmlResult<C>, Error> {
-    let entries = WalkDir::new(&base_path)
-        .sort(true) // helps branch predictor (?)
-        .into_iter()
-        // XXX: cannot use par_bridge because of https://github.com/rayon-rs/rayon/issues/690
-        .collect::<Vec<_>>();
-
-    // Keeping many instances of `C` alive is very memory-intense for large sites. Try to force
-    // rayon to keep exactly one per thread instead. https://github.com/rayon-rs/rayon/issues/742
-    let min_len = entries.len() / rayon::current_num_threads();
-
-    let result: Result<_, Error> = entries
-        .into_par_iter()
-        .with_min_len(min_len)
+    let result: Result<_, Error> = walk_files(base_path)
         .try_fold(
             // apparently can't use arena allocations here because that would make values !Send
             // also because quick-xml specifically wants std vec
             || (Vec::new(), Vec::new(), C::new(), 0, 0),
             |(mut xml_buf, mut link_buf, mut collector, mut documents_count, mut file_count),
              entry| {
-                let entry = entry?;
-                let metadata = entry.metadata()?;
-
-                let file_type = metadata.file_type();
-
-                if file_type.is_symlink() {
-                    return Err(anyhow!(
-                        "Found unsupported symlink at {}",
-                        entry.path().display()
-                    ));
-                }
-
-                if !file_type.is_file() {
-                    return Ok((xml_buf, link_buf, collector, documents_count, file_count));
-                }
-
                 let arena = arenas.get_or_default();
                 let document = Document::new(&arena, &base_path, arena.alloc(entry.path()));
 
@@ -416,23 +435,8 @@ fn extract_markdown_paragraphs<'a>(
     arenas: &'a ThreadLocal<Bump>,
     sources_path: &Path,
 ) -> Result<MarkdownResult<'a>, Error> {
-    let entries = WalkDir::new(sources_path)
-        .sort(true) // helps branch predictor (?)
-        .into_iter()
-        // XXX: cannot use par_bridge because of https://github.com/rayon-rs/rayon/issues/690
-        .collect::<Vec<_>>();
-
-    let results: Vec<Result<_, Error>> = entries
-        .into_par_iter()
+    let results: Vec<Result<_, Error>> = walk_files(sources_path)
         .try_fold(Vec::new, |mut paragraphs, entry| {
-            let entry = entry?;
-            let metadata = entry.metadata()?;
-            let file_type = metadata.file_type();
-
-            if !file_type.is_file() {
-                return Ok(paragraphs);
-            }
-
             let source = DocumentSource::new(entry.path());
 
             if !source
