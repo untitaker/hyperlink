@@ -317,8 +317,13 @@ fn extract_html_links<'a, C: LinkCollector<'a>>(
         // XXX: cannot use par_bridge because of https://github.com/rayon-rs/rayon/issues/690
         .collect::<Vec<_>>();
 
+    // Keeping many instances of `C` alive is very memory-intense for large sites. Try to force
+    // rayon to keep exactly one per thread instead. https://github.com/rayon-rs/rayon/issues/742
+    let min_len = entries.len() / rayon::current_num_threads();
+
     let result: Result<_, Error> = entries
         .into_par_iter()
+        .with_min_len(min_len)
         .try_fold(
             // apparently can't use arena allocations here because that would make values !Send
             // also because quick-xml specifically wants std vec
