@@ -31,7 +31,7 @@ Very fast link checker for static sites.
 
 [Download the latest binary](https://github.com/untitaker/hyperlink/releases) and:
 
-```
+```bash
 # Check a folder of HTML
 ./hyperlink public/
 
@@ -44,7 +44,7 @@ Very fast link checker for static sites.
 
 Or as GitHub action:
 
-```
+```yaml
 - uses: untitaker/hyperlink@0.1.8
   with:
     args: public/ --sources src/
