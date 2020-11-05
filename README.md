@@ -86,6 +86,10 @@ links. However, it can do more.
   i.e. add error messages in-line to PR diffs. This is only useful with
   `--sources` set.
 
+  If you are using `hyperlink` through the GitHub action this option is already
+  set. It is only useful if you are downloading/building and running hyperlink
+  yourself in CI.
+
 ## Exit codes
 
 * `exit 1`: There have been errors (hard 404s)
