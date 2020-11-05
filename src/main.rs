@@ -345,11 +345,7 @@ fn walk_files(base_path: &Path) -> impl ParallelIterator<Item = jwalk::DirEntry<
         // XXX: cannot use par_bridge because of https://github.com/rayon-rs/rayon/issues/690
         .collect::<Vec<_>>();
 
-    // Keeping many instances of `C` alive is very memory-intense for large sites. Try to force
-    // rayon to keep only 1 per thread instead. https://github.com/rayon-rs/rayon/issues/742
-    let min_len = entries.len() / rayon::current_num_threads();
-
-    entries.into_par_iter().with_min_len(min_len)
+    entries.into_par_iter()
 }
 
 fn extract_html_links<'a, C: LinkCollector<'a>>(
