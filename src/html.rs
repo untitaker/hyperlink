@@ -328,7 +328,7 @@ impl<'a> Document<'a> {
                             for link in &mut sink[last_paragraph_i..] {
                                 match link {
                                     Link::Uses(ref mut x) => {
-                                        x.paragraph = Some(paragraph.clone());
+                                        x.paragraph = paragraph.clone();
                                     }
                                     Link::Defines(_) => {}
                                 }

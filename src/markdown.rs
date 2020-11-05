@@ -48,7 +48,7 @@ impl DocumentSource {
                 Event::End(tag) if PARAGRAPH_TAGS.contains(&tag) => {
                     let paragraph = walker.finish_paragraph();
                     if in_paragraph {
-                        rv.push(paragraph);
+                        rv.extend(paragraph);
                     }
                     in_paragraph = false;
                 }

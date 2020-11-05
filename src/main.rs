@@ -19,7 +19,7 @@ use thread_local::ThreadLocal;
 
 use collector::{BrokenLinkCollector, LinkCollector, UsedLinkCollector};
 use html::{DefinedLink, Document, Href, Link};
-use paragraph::{DebugParagraphWalker, Paragraph, ParagraphHasher};
+use paragraph::{DebugParagraphWalker, NoopParagraphWalker, ParagraphHasher, ParagraphWalker};
 
 static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
 static HTML_FILES: &[&str] = &["htm", "html"];
@@ -119,11 +119,27 @@ fn main() -> Result<(), Error> {
 
     let base_path = base_path.unwrap();
 
+    if sources_path.is_some() {
+        check_links::<ParagraphHasher>(base_path, check_anchors, sources_path, github_actions)
+    } else {
+        check_links::<NoopParagraphWalker>(base_path, check_anchors, sources_path, github_actions)
+    }
+}
+
+fn check_links<P: ParagraphWalker>(
+    base_path: PathBuf,
+    check_anchors: bool,
+    sources_path: Option<PathBuf>,
+    github_actions: bool,
+) -> Result<(), Error>
+where
+    P::Paragraph: Copy + PartialEq,
+{
     let arenas = ThreadLocal::new();
 
     println!("Reading files");
 
-    let html_result = extract_html_links::<BrokenLinkCollector>(
+    let html_result = extract_html_links::<BrokenLinkCollector<_>, P>(
         &arenas,
         &base_path,
         check_anchors,
@@ -132,7 +148,7 @@ fn main() -> Result<(), Error> {
 
     let paragraps_to_sourcefile = if let Some(ref sources_path) = sources_path {
         println!("Reading source files");
-        extract_markdown_paragraphs(&arenas, sources_path)?
+        extract_markdown_paragraphs::<P>(&arenas, sources_path)?
     } else {
         BTreeMap::new()
     };
@@ -348,7 +364,7 @@ fn walk_files(base_path: &Path) -> impl ParallelIterator<Item = jwalk::DirEntry<
     entries.into_par_iter()
 }
 
-fn extract_html_links<'a, C: LinkCollector<'a>>(
+fn extract_html_links<'a, C: LinkCollector<'a, P::Paragraph>, P: ParagraphWalker>(
     arenas: &'a ThreadLocal<Bump>,
     base_path: &Path,
     check_anchors: bool,
@@ -379,7 +395,7 @@ fn extract_html_links<'a, C: LinkCollector<'a>>(
                 }
 
                 document
-                    .links::<ParagraphHasher>(
+                    .links::<P>(
                         arena,
                         &mut xml_buf,
                         &mut link_buf,
@@ -425,12 +441,12 @@ fn extract_html_links<'a, C: LinkCollector<'a>>(
     })
 }
 
-type MarkdownResult<'a> = BTreeMap<Paragraph, BumpVec<'a, DocumentSource>>;
+type MarkdownResult<'a, P> = BTreeMap<P, BumpVec<'a, DocumentSource>>;
 
-fn extract_markdown_paragraphs<'a>(
+fn extract_markdown_paragraphs<'a, P: ParagraphWalker>(
     arenas: &'a ThreadLocal<Bump>,
     sources_path: &Path,
-) -> Result<MarkdownResult<'a>, Error> {
+) -> Result<MarkdownResult<'a, P::Paragraph>, Error> {
     let results: Vec<Result<_, Error>> = walk_files(sources_path)
         .try_fold(Vec::new, |mut paragraphs, entry| {
             let source = DocumentSource::new(entry.path());
@@ -445,7 +461,7 @@ fn extract_markdown_paragraphs<'a>(
             }
 
             for paragraph in source
-                .paragraphs::<ParagraphHasher>()
+                .paragraphs::<P>()
                 .with_context(|| format!("Failed to read file {}", source.path.display()))?
             {
                 paragraphs.push((source.clone(), paragraph));
@@ -473,10 +489,13 @@ fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(),
     let arenas = ThreadLocal::new();
 
     println!("Reading files");
-    let html_result = extract_html_links::<UsedLinkCollector>(&arenas, &base_path, true, true)?;
+    let html_result = extract_html_links::<UsedLinkCollector<_>, ParagraphHasher>(
+        &arenas, &base_path, true, true,
+    )?;
 
     println!("Reading source files");
-    let paragraps_to_sourcefile = extract_markdown_paragraphs(&arenas, &sources_path)?;
+    let paragraps_to_sourcefile =
+        extract_markdown_paragraphs::<ParagraphHasher>(&arenas, &sources_path)?;
 
     println!("Calculating");
     let mut total_links = 0;

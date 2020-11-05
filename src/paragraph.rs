@@ -11,12 +11,12 @@ pub struct ParagraphHasher {
     hasher: blake3::Hasher,
 }
 
-pub trait ParagraphWalker {
-    type Paragraph: Clone + Eq + PartialEq + Hash + Ord + PartialOrd;
+pub trait ParagraphWalker: Send {
+    type Paragraph: Clone + Eq + PartialEq + Hash + Ord + PartialOrd + Send;
 
     fn new() -> Self;
     fn update_raw(&mut self, text: &str);
-    fn finish_paragraph(&mut self) -> Self::Paragraph;
+    fn finish_paragraph(&mut self) -> Option<Self::Paragraph>;
 
     fn update(&mut self, text: &str) {
         for word in text.trim().split_whitespace() {
@@ -40,12 +40,12 @@ impl ParagraphWalker for ParagraphHasher {
         self.hasher.update(text.as_bytes());
     }
 
-    fn finish_paragraph(&mut self) -> Self::Paragraph {
+    fn finish_paragraph(&mut self) -> Option<Self::Paragraph> {
         let rv = Paragraph {
             hash: self.hasher.finalize().into(),
         };
         self.hasher.reset();
-        rv
+        Some(rv)
     }
 }
 
@@ -84,11 +84,30 @@ where
         self.contents.push_str(text);
     }
 
-    fn finish_paragraph(&mut self) -> Self::Paragraph {
-        let inner = self.inner.finish_paragraph();
-        DebugParagraph {
+    fn finish_paragraph(&mut self) -> Option<Self::Paragraph> {
+        let inner = self.inner.finish_paragraph()?;
+        Some(DebugParagraph {
             inner,
             contents: mem::replace(&mut self.contents, String::new()),
-        }
+        })
+    }
+}
+
+pub struct NoopParagraphWalker;
+
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum VoidParagraph {}
+
+impl ParagraphWalker for NoopParagraphWalker {
+    type Paragraph = VoidParagraph;
+
+    fn new() -> Self {
+        NoopParagraphWalker
+    }
+
+    fn update_raw(&mut self, _text: &str) {}
+
+    fn finish_paragraph(&mut self) -> Option<Self::Paragraph> {
+        None
     }
 }
