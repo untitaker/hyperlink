@@ -120,8 +120,7 @@ links. However, it can do more.
   noticing a change in timings.
 
 * [liche](https://github.com/raviqqe/liche) seems to be closest in performance
-  to `hyperlink`. `hyperlink` is generally faster, [except on folders with many
-  small files](https://github.com/untitaker/hyperlink/issues/12).
+  to `hyperlink`.
 
 ## License
 
