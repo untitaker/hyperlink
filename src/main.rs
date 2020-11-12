@@ -356,7 +356,10 @@ fn walk_files(base_path: &Path) -> impl ParallelIterator<Item = jwalk::DirEntry<
         // XXX: cannot use par_bridge because of https://github.com/rayon-rs/rayon/issues/690
         .collect::<Vec<_>>();
 
-    entries.into_par_iter()
+    // Minimize amount of LinkCollector instances created. This impacts parallelism but
+    // `LinkCollector::merge` is rather slow.
+    let min_len = entries.len() / rayon::current_num_threads();
+    entries.into_par_iter().with_min_len(min_len)
 }
 
 fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
