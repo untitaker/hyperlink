@@ -1,7 +1,12 @@
-use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
+use patricia_tree::PatriciaMap;
 
 use crate::html::{Href, Link, UsedLink};
+
+impl AsRef<[u8]> for Href {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
 
 pub trait LinkCollector<P: Send>: Send {
     fn new() -> Self;
@@ -32,28 +37,33 @@ impl<P: Send> LinkCollector<P> for UsedLinkCollector<P> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 enum LinkState<P> {
     /// We have observed a DefinedLink for this href
     Defined,
     /// We have not *yet* observed a DefinedLink and therefore need to keep track of all link
     /// usages for potential error reporting.
-    Undefined(Vec<UsedLink<P>>),
+    Undefined(PatriciaMap<Option<P>>),  // (path) -> paragraph
 }
 
-impl<P> LinkState<P> {
-    fn add_usage(&mut self, link: UsedLink<P>) {
+impl<P: Copy> LinkState<P> {
+    fn add_usage(&mut self, link: &UsedLink<P>) {
         if let LinkState::Undefined(ref mut links) = self {
-            links.push(link);
+            links.insert(
+                link.path.to_str().expect("Invalid UTF-8 in path"),
+                link.paragraph.as_ref().map(|&x| x)
+            );
         }
     }
 
-    fn update(&mut self, mut other: Self) {
-        match (self, &mut other) {
-            (LinkState::Defined, _) => (),
-            (slf, LinkState::Defined) => *slf = LinkState::Defined,
-            (LinkState::Undefined(links), LinkState::Undefined(links2)) => {
-                links.extend(links2.drain(..))
+    fn update(&mut self, other: Self) {
+        match self {
+            LinkState::Defined => (),
+            LinkState::Undefined(links) => {
+                match other {
+                    LinkState::Defined => *self = LinkState::Defined,
+                    LinkState::Undefined(links2) => links.extend(links2.into_iter()),
+                }
             }
         }
     }
@@ -61,14 +71,14 @@ impl<P> LinkState<P> {
 
 /// Link collector used for actual link checking. Keeps track of broken links only.
 pub struct BrokenLinkCollector<P> {
-    links: BTreeMap<Href, LinkState<P>>,
+    links: PatriciaMap<LinkState<P>>,
     used_link_count: usize,
 }
 
-impl<P: Send> LinkCollector<P> for BrokenLinkCollector<P> {
+impl<P: Send + Copy> LinkCollector<P> for BrokenLinkCollector<P> {
     fn new() -> Self {
         BrokenLinkCollector {
-            links: BTreeMap::new(),
+            links: PatriciaMap::new(),
             used_link_count: 0,
         }
     }
@@ -77,10 +87,13 @@ impl<P: Send> LinkCollector<P> for BrokenLinkCollector<P> {
         match link {
             Link::Uses(used_link) => {
                 self.used_link_count += 1;
-                self.links
-                    .entry(used_link.href.clone())
-                    .or_insert_with(|| LinkState::Undefined(Vec::new()))
-                    .add_usage(used_link);
+                if let Some(state) = self.links.get_mut(&used_link.href) {
+                    state.add_usage(&used_link);
+                } else {
+                    let mut state = LinkState::Undefined(PatriciaMap::new());
+                    state.add_usage(&used_link);
+                    self.links.insert(used_link.href, state);
+                }
             }
             Link::Defines(defined_link) => {
                 self.links.insert(defined_link.href, LinkState::Defined);
@@ -91,14 +104,11 @@ impl<P: Send> LinkCollector<P> for BrokenLinkCollector<P> {
     fn merge(&mut self, other: Self) {
         self.used_link_count += other.used_link_count;
 
-        for (href, state) in other.links {
-            match self.links.entry(href) {
-                Entry::Occupied(mut entry) => {
-                    entry.get_mut().update(state);
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(state);
-                }
+        for (href, other_state) in other.links {
+            if let Some(state) = self.links.get_mut(&href) {
+                state.update(other_state);
+            } else {
+                self.links.insert(href, other_state);
             }
         }
     }
@@ -114,17 +124,22 @@ impl<P: Copy + PartialEq> BrokenLinkCollector<P> {
     pub fn get_broken_links(&self, check_anchors: bool) -> impl Iterator<Item = BrokenLink<P>> {
         let mut broken_links = Vec::new();
 
-        for (href, state) in &self.links {
+        for (href, state) in self.links.iter() {
             if let LinkState::Undefined(links) = state {
+                let href = unsafe { Href(String::from_utf8_unchecked(href)) };
                 let hard_404 = if check_anchors {
-                    self.links.get(&href.without_anchor()) != Some(&LinkState::Defined)
+                    !matches!(self.links.get(&href.without_anchor()), Some(&LinkState::Defined))
                 } else {
                     true
                 };
 
-                for used_link in links {
+                for (path, &paragraph) in links.iter() {
                     broken_links.push(BrokenLink {
-                        used_link: used_link.clone(),
+                        used_link: UsedLink {
+                            href: href.clone(),
+                            path: unsafe { String::from_utf8_unchecked(path).into() },
+                            paragraph,
+                        },
                         hard_404,
                     });
                 }

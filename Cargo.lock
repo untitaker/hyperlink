@@ -298,6 +298,7 @@ dependencies = [
  "anyhow",
  "blake3",
  "jwalk",
+ "patricia_tree",
  "pulldown-cmark",
  "quick-xml",
  "rayon",
@@ -355,6 +356,15 @@ checksum = "05499f3756671c15885fee9034446956fff3f243d6077b91e5767df161f766b3"
 dependencies = [
  "hermit-abi",
  "libc",
+]
+
+[[package]]
+name = "patricia_tree"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "212af221c42a6d246ff33b3d9afd9a86795a11ed462246e76b93b1f93676258a"
+dependencies = [
+ "bitflags",
 ]
 
 [[package]]

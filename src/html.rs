@@ -82,7 +82,7 @@ fn test_push_and_canonicalize_empty_href() {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Href(String);
+pub struct Href(pub String);
 
 impl Href {
     pub fn without_anchor(&self) -> Href {
