@@ -89,7 +89,7 @@ impl<P: Copy> LinkState<P> {
         if let LinkState::Undefined(ref mut links) = self {
             links.insert(
                 path_to_bytes(&link.path),
-                link.paragraph.as_ref().map(|&x| x),
+                link.paragraph.as_ref().copied(),
             );
         }
     }
