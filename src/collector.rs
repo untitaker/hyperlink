@@ -3,25 +3,25 @@ use std::collections::BTreeMap;
 
 use crate::html::{Href, Link, UsedLink};
 
-pub trait LinkCollector<'a, P: Send>: Send {
+pub trait LinkCollector<P: Send>: Send {
     fn new() -> Self;
-    fn ingest(&mut self, link: Link<'a, P>);
+    fn ingest(&mut self, link: Link<P>);
     fn merge(&mut self, other: Self);
 }
 
 /// Collects only used links for match-all-paragraphs command. Discards defined links.
-pub struct UsedLinkCollector<'a, P> {
-    pub used_links: Vec<UsedLink<'a, P>>,
+pub struct UsedLinkCollector<P> {
+    pub used_links: Vec<UsedLink<P>>,
 }
 
-impl<'a, P: Send> LinkCollector<'a, P> for UsedLinkCollector<'a, P> {
+impl<P: Send> LinkCollector<P> for UsedLinkCollector<P> {
     fn new() -> Self {
         UsedLinkCollector {
             used_links: Vec::new(),
         }
     }
 
-    fn ingest(&mut self, link: Link<'a, P>) {
+    fn ingest(&mut self, link: Link<P>) {
         if let Link::Uses(used_link) = link {
             self.used_links.push(used_link);
         }
@@ -33,16 +33,16 @@ impl<'a, P: Send> LinkCollector<'a, P> for UsedLinkCollector<'a, P> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-enum LinkState<'a, P> {
+enum LinkState<P> {
     /// We have observed a DefinedLink for this href
     Defined,
     /// We have not *yet* observed a DefinedLink and therefore need to keep track of all link
     /// usages for potential error reporting.
-    Undefined(Vec<UsedLink<'a, P>>),
+    Undefined(Vec<UsedLink<P>>),
 }
 
-impl<'a, P> LinkState<'a, P> {
-    fn add_usage(&mut self, link: UsedLink<'a, P>) {
+impl<P> LinkState<P> {
+    fn add_usage(&mut self, link: UsedLink<P>) {
         if let LinkState::Undefined(ref mut links) = self {
             links.push(link);
         }
@@ -60,12 +60,12 @@ impl<'a, P> LinkState<'a, P> {
 }
 
 /// Link collector used for actual link checking. Keeps track of broken links only.
-pub struct BrokenLinkCollector<'a, P> {
-    links: BTreeMap<Href<'a>, LinkState<'a, P>>,
+pub struct BrokenLinkCollector<P> {
+    links: BTreeMap<Href, LinkState<P>>,
     used_link_count: usize,
 }
 
-impl<'a, P: Send> LinkCollector<'a, P> for BrokenLinkCollector<'a, P> {
+impl<P: Send> LinkCollector<P> for BrokenLinkCollector<P> {
     fn new() -> Self {
         BrokenLinkCollector {
             links: BTreeMap::new(),
@@ -73,12 +73,12 @@ impl<'a, P: Send> LinkCollector<'a, P> for BrokenLinkCollector<'a, P> {
         }
     }
 
-    fn ingest(&mut self, link: Link<'a, P>) {
+    fn ingest(&mut self, link: Link<P>) {
         match link {
             Link::Uses(used_link) => {
                 self.used_link_count += 1;
                 self.links
-                    .entry(used_link.href)
+                    .entry(used_link.href.clone())
                     .or_insert_with(|| LinkState::Undefined(Vec::new()))
                     .add_usage(used_link);
             }
@@ -105,16 +105,16 @@ impl<'a, P: Send> LinkCollector<'a, P> for BrokenLinkCollector<'a, P> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct BrokenLink<'a, P> {
+pub struct BrokenLink<P> {
     pub hard_404: bool,
-    pub used_link: UsedLink<'a, P>,
+    pub used_link: UsedLink<P>,
 }
 
-impl<'a, P: Copy + PartialEq> BrokenLinkCollector<'a, P> {
-    pub fn get_broken_links(&self, check_anchors: bool) -> impl Iterator<Item = BrokenLink<'a, P>> {
+impl<P: Copy + PartialEq> BrokenLinkCollector<P> {
+    pub fn get_broken_links(&self, check_anchors: bool) -> impl Iterator<Item = BrokenLink<P>> {
         let mut broken_links = Vec::new();
 
-        for (&href, state) in &self.links {
+        for (href, state) in &self.links {
             if let LinkState::Undefined(links) = state {
                 let hard_404 = if check_anchors {
                     self.links.get(&href.without_anchor()) != Some(&LinkState::Defined)
@@ -122,9 +122,9 @@ impl<'a, P: Copy + PartialEq> BrokenLinkCollector<'a, P> {
                     true
                 };
 
-                for &used_link in links {
+                for used_link in links {
                     broken_links.push(BrokenLink {
-                        used_link,
+                        used_link: used_link.clone(),
                         hard_404,
                     });
                 }

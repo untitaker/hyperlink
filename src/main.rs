@@ -9,13 +9,10 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use anyhow::{anyhow, Context, Error};
-use bumpalo::collections::Vec as BumpVec;
-use bumpalo::Bump;
 use jwalk::WalkDir;
 use markdown::DocumentSource;
 use rayon::prelude::*;
 use structopt::StructOpt;
-use thread_local::ThreadLocal;
 
 use collector::{BrokenLinkCollector, LinkCollector, UsedLinkCollector};
 use html::{DefinedLink, Document, Href, Link};
@@ -135,12 +132,9 @@ fn check_links<P: ParagraphWalker>(
 where
     P::Paragraph: Copy + PartialEq,
 {
-    let arenas = ThreadLocal::new();
-
     println!("Reading files");
 
     let html_result = extract_html_links::<BrokenLinkCollector<_>, P>(
-        &arenas,
         &base_path,
         check_anchors,
         sources_path.is_some(),
@@ -148,7 +142,7 @@ where
 
     let paragraps_to_sourcefile = if let Some(ref sources_path) = sources_path {
         println!("Reading source files");
-        extract_markdown_paragraphs::<P>(&arenas, sources_path)?
+        extract_markdown_paragraphs::<P>(sources_path)?
     } else {
         BTreeMap::new()
     };
@@ -179,7 +173,7 @@ where
 
                 for source in *document_sources {
                     let (bad_links, bad_anchors) = bad_links_and_anchors
-                        .entry((!had_sources, source.path.as_path()))
+                        .entry((!had_sources, source.path.clone()))
                         .or_insert_with(|| (BTreeSet::new(), BTreeSet::new()));
 
                     if broken_link.hard_404 {
@@ -187,7 +181,7 @@ where
                     } else {
                         bad_anchors
                     }
-                    .insert(broken_link.used_link.href);
+                    .insert(broken_link.used_link.href.clone());
                 }
             }
         }
@@ -265,7 +259,7 @@ where
     Ok(())
 }
 
-fn print_github_actions_href_list(hrefs: &BTreeSet<Href<'_>>) {
+fn print_github_actions_href_list(hrefs: &BTreeSet<Href>) {
     for href in hrefs {
         // %0A -- escaped newline
         //
@@ -275,8 +269,6 @@ fn print_github_actions_href_list(hrefs: &BTreeSet<Href<'_>>) {
 }
 
 fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
-    let arena = Bump::new();
-
     let extension = match path.extension() {
         Some(x) => x,
         None => return Err(anyhow!("File has no extension, cannot determine type")),
@@ -291,10 +283,9 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
                 .collect()
         }
         Some(x) if HTML_FILES.contains(&x) => {
-            let document = Document::new(&arena, Path::new(""), &path);
+            let document = Document::new(Path::new(""), &path);
             let mut links = Vec::new();
             document.links::<DebugParagraphWalker<ParagraphHasher>>(
-                &arena,
                 &mut Vec::new(),
                 &mut links,
                 false,
@@ -364,8 +355,7 @@ fn walk_files(base_path: &Path) -> impl ParallelIterator<Item = jwalk::DirEntry<
     entries.into_par_iter()
 }
 
-fn extract_html_links<'a, C: LinkCollector<'a, P::Paragraph>, P: ParagraphWalker>(
-    arenas: &'a ThreadLocal<Bump>,
+fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
     base_path: &Path,
     check_anchors: bool,
     get_paragraphs: bool,
@@ -374,14 +364,16 @@ fn extract_html_links<'a, C: LinkCollector<'a, P::Paragraph>, P: ParagraphWalker
         .try_fold(
             // apparently can't use arena allocations here because that would make values !Send
             // also because quick-xml specifically wants std vec
-            || (Vec::new(), Vec::new(), C::new(), 0, 0),
-            |(mut xml_buf, mut link_buf, mut collector, mut documents_count, mut file_count),
-             entry| {
-                let arena = arenas.get_or_default();
-                let document = Document::new(&arena, &base_path, arena.alloc(entry.path()));
+            || (C::new(), 0, 0),
+            |(mut collector, mut documents_count, mut file_count), entry| {
+                let mut xml_buf = Vec::new();
+                let mut link_buf = Vec::new();
+
+                let path = entry.path();
+                let document = Document::new(&base_path, &path);
 
                 collector.ingest(Link::Defines(DefinedLink {
-                    href: document.href,
+                    href: document.href.clone(),
                 }));
                 file_count += 1;
 
@@ -391,36 +383,22 @@ fn extract_html_links<'a, C: LinkCollector<'a, P::Paragraph>, P: ParagraphWalker
                     .and_then(|extension| Some(HTML_FILES.contains(&extension.to_str()?)))
                     .unwrap_or(false)
                 {
-                    return Ok((xml_buf, link_buf, collector, documents_count, file_count));
+                    return Ok((collector, documents_count, file_count));
                 }
 
                 document
-                    .links::<P>(
-                        arena,
-                        &mut xml_buf,
-                        &mut link_buf,
-                        check_anchors,
-                        get_paragraphs,
-                    )
+                    .links::<P>(&mut xml_buf, &mut link_buf, check_anchors, get_paragraphs)
                     .with_context(|| format!("Failed to read file {}", document.path.display()))?;
 
-                xml_buf.clear();
-                for link in link_buf.drain(..) {
+                for link in link_buf {
                     collector.ingest(link);
                 }
 
                 documents_count += 1;
 
-                Ok((xml_buf, link_buf, collector, documents_count, file_count))
+                Ok((collector, documents_count, file_count))
             },
         )
-        .map(|result| {
-            result.map(
-                |(_xml_buf, _link_buf, collector, documents_count, file_count)| {
-                    (collector, documents_count, file_count)
-                },
-            )
-        })
         .try_reduce(
             || (C::new(), 0, 0),
             |(mut collector, mut documents_count, mut file_count),
@@ -441,12 +419,11 @@ fn extract_html_links<'a, C: LinkCollector<'a, P::Paragraph>, P: ParagraphWalker
     })
 }
 
-type MarkdownResult<'a, P> = BTreeMap<P, BumpVec<'a, DocumentSource>>;
+type MarkdownResult<P> = BTreeMap<P, Vec<DocumentSource>>;
 
-fn extract_markdown_paragraphs<'a, P: ParagraphWalker>(
-    arenas: &'a ThreadLocal<Bump>,
+fn extract_markdown_paragraphs<P: ParagraphWalker>(
     sources_path: &Path,
-) -> Result<MarkdownResult<'a, P::Paragraph>, Error> {
+) -> Result<MarkdownResult<P::Paragraph>, Error> {
     let results: Vec<Result<_, Error>> = walk_files(sources_path)
         .try_fold(Vec::new, |mut paragraphs, entry| {
             let source = DocumentSource::new(entry.path());
@@ -471,13 +448,12 @@ fn extract_markdown_paragraphs<'a, P: ParagraphWalker>(
         .collect();
 
     let mut paragraps_to_sourcefile = BTreeMap::new();
-    let main_arena = arenas.get_or_default();
 
     for result in results {
         for (source, paragraph) in result? {
             paragraps_to_sourcefile
                 .entry(paragraph)
-                .or_insert_with(|| BumpVec::new_in(main_arena))
+                .or_insert_with(Vec::new)
                 .push(source.clone());
         }
     }
@@ -486,16 +462,12 @@ fn extract_markdown_paragraphs<'a, P: ParagraphWalker>(
 }
 
 fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(), Error> {
-    let arenas = ThreadLocal::new();
-
     println!("Reading files");
-    let html_result = extract_html_links::<UsedLinkCollector<_>, ParagraphHasher>(
-        &arenas, &base_path, true, true,
-    )?;
+    let html_result =
+        extract_html_links::<UsedLinkCollector<_>, ParagraphHasher>(&base_path, true, true)?;
 
     println!("Reading source files");
-    let paragraps_to_sourcefile =
-        extract_markdown_paragraphs::<ParagraphHasher>(&arenas, &sources_path)?;
+    let paragraps_to_sourcefile = extract_markdown_paragraphs::<ParagraphHasher>(&sources_path)?;
 
     println!("Calculating");
     let mut total_links = 0;
