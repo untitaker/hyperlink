@@ -1,8 +1,35 @@
+use std::path::{Path, PathBuf};
+
 use patricia_tree::PatriciaMap;
 
 use crate::html::{Href, Link, UsedLink};
 
-impl AsRef<[u8]> for Href {
+#[cfg(unix)]
+fn bytes_to_path(bytes: &[u8]) -> PathBuf {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    OsStr::from_bytes(bytes).into()
+}
+
+#[cfg(unix)]
+fn path_to_bytes(path: &Path) -> &[u8] {
+    use std::os::unix::ffi::OsStrExt;
+
+    path.as_os_str().as_bytes()
+}
+
+#[cfg(not(unix))]
+fn bytes_to_path(bytes: &[u8]) -> PathBuf {
+    unsafe { String::from_utf8_unchecked(path).into() }
+}
+
+#[cfg(not(unix))]
+fn path_to_bytes(path: &Path) -> &[u8] {
+    link.path.to_str().expect("Invalid Unicode in path")
+}
+
+impl<'a> AsRef<[u8]> for Href<'a> {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
     }
@@ -10,13 +37,20 @@ impl AsRef<[u8]> for Href {
 
 pub trait LinkCollector<P: Send>: Send {
     fn new() -> Self;
-    fn ingest(&mut self, link: Link<P>);
+    fn ingest<'a>(&mut self, link: Link<'a, P>);
     fn merge(&mut self, other: Self);
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct OwnedUsedLink<P> {
+    pub href: String,
+    pub path: PathBuf,
+    pub paragraph: Option<P>,
 }
 
 /// Collects only used links for match-all-paragraphs command. Discards defined links.
 pub struct UsedLinkCollector<P> {
-    pub used_links: Vec<UsedLink<P>>,
+    pub used_links: Vec<OwnedUsedLink<P>>,
 }
 
 impl<P: Send> LinkCollector<P> for UsedLinkCollector<P> {
@@ -26,9 +60,13 @@ impl<P: Send> LinkCollector<P> for UsedLinkCollector<P> {
         }
     }
 
-    fn ingest(&mut self, link: Link<P>) {
+    fn ingest<'a>(&mut self, link: Link<'a, P>) {
         if let Link::Uses(used_link) = link {
-            self.used_links.push(used_link);
+            self.used_links.push(OwnedUsedLink {
+                href: used_link.href.0.to_owned(),
+                path: used_link.path.to_owned(),
+                paragraph: used_link.paragraph,
+            });
         }
     }
 
@@ -43,15 +81,15 @@ enum LinkState<P> {
     Defined,
     /// We have not *yet* observed a DefinedLink and therefore need to keep track of all link
     /// usages for potential error reporting.
-    Undefined(PatriciaMap<Option<P>>),  // (path) -> paragraph
+    Undefined(PatriciaMap<Option<P>>), // (path) -> paragraph
 }
 
 impl<P: Copy> LinkState<P> {
     fn add_usage(&mut self, link: &UsedLink<P>) {
         if let LinkState::Undefined(ref mut links) = self {
             links.insert(
-                link.path.to_str().expect("Invalid UTF-8 in path"),
-                link.paragraph.as_ref().map(|&x| x)
+                path_to_bytes(&link.path),
+                link.paragraph.as_ref().map(|&x| x),
             );
         }
     }
@@ -59,12 +97,10 @@ impl<P: Copy> LinkState<P> {
     fn update(&mut self, other: Self) {
         match self {
             LinkState::Defined => (),
-            LinkState::Undefined(links) => {
-                match other {
-                    LinkState::Defined => *self = LinkState::Defined,
-                    LinkState::Undefined(links2) => links.extend(links2.into_iter()),
-                }
-            }
+            LinkState::Undefined(links) => match other {
+                LinkState::Defined => *self = LinkState::Defined,
+                LinkState::Undefined(links2) => links.extend(links2.into_iter()),
+            },
         }
     }
 }
@@ -83,7 +119,7 @@ impl<P: Send + Copy> LinkCollector<P> for BrokenLinkCollector<P> {
         }
     }
 
-    fn ingest(&mut self, link: Link<P>) {
+    fn ingest<'a>(&mut self, link: Link<'a, P>) {
         match link {
             Link::Uses(used_link) => {
                 self.used_link_count += 1;
@@ -117,7 +153,7 @@ impl<P: Send + Copy> LinkCollector<P> for BrokenLinkCollector<P> {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct BrokenLink<P> {
     pub hard_404: bool,
-    pub used_link: UsedLink<P>,
+    pub link: OwnedUsedLink<P>,
 }
 
 impl<P: Copy + PartialEq> BrokenLinkCollector<P> {
@@ -126,21 +162,24 @@ impl<P: Copy + PartialEq> BrokenLinkCollector<P> {
 
         for (href, state) in self.links.iter() {
             if let LinkState::Undefined(links) = state {
-                let href = unsafe { Href(String::from_utf8_unchecked(href)) };
+                let href = unsafe { String::from_utf8_unchecked(href) };
                 let hard_404 = if check_anchors {
-                    !matches!(self.links.get(&href.without_anchor()), Some(&LinkState::Defined))
+                    !matches!(
+                        self.links.get(&Href(&href).without_anchor()),
+                        Some(&LinkState::Defined)
+                    )
                 } else {
                     true
                 };
 
                 for (path, &paragraph) in links.iter() {
                     broken_links.push(BrokenLink {
-                        used_link: UsedLink {
-                            href: href.clone(),
-                            path: unsafe { String::from_utf8_unchecked(path).into() },
-                            paragraph,
-                        },
                         hard_404,
+                        link: OwnedUsedLink {
+                            path: bytes_to_path(&path),
+                            paragraph,
+                            href: href.clone(),
+                        },
                     });
                 }
             }

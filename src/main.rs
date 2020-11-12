@@ -9,13 +9,14 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use anyhow::{anyhow, Context, Error};
+use bumpalo::collections::vec::Vec as BumpVec;
 use jwalk::WalkDir;
 use markdown::DocumentSource;
 use rayon::prelude::*;
 use structopt::StructOpt;
 
 use collector::{BrokenLinkCollector, LinkCollector, UsedLinkCollector};
-use html::{DefinedLink, Document, Href, Link};
+use html::{DefinedLink, Document, Link};
 use paragraph::{DebugParagraphWalker, NoopParagraphWalker, ParagraphHasher, ParagraphWalker};
 
 static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
@@ -166,7 +167,7 @@ where
             bad_anchors_count += 1;
         }
 
-        if let Some(ref paragraph) = broken_link.used_link.paragraph {
+        if let Some(ref paragraph) = broken_link.link.paragraph {
             if let Some(document_sources) = &paragraps_to_sourcefile.get(paragraph) {
                 debug_assert!(!document_sources.is_empty());
                 had_sources = true;
@@ -181,14 +182,14 @@ where
                     } else {
                         bad_anchors
                     }
-                    .insert(broken_link.used_link.href.clone());
+                    .insert(broken_link.link.href.clone());
                 }
             }
         }
 
         if !had_sources {
             let (bad_links, bad_anchors) = bad_links_and_anchors
-                .entry((!had_sources, broken_link.used_link.path))
+                .entry((!had_sources, broken_link.link.path))
                 .or_insert_with(|| (BTreeSet::new(), BTreeSet::new()));
 
             if broken_link.hard_404 {
@@ -196,7 +197,7 @@ where
             } else {
                 bad_anchors
             }
-            .insert(broken_link.used_link.href);
+            .insert(broken_link.link.href);
         }
     }
 
@@ -259,7 +260,7 @@ where
     Ok(())
 }
 
-fn print_github_actions_href_list(hrefs: &BTreeSet<Href>) {
+fn print_github_actions_href_list(hrefs: &BTreeSet<String>) {
     for href in hrefs {
         // %0A -- escaped newline
         //
@@ -269,6 +270,8 @@ fn print_github_actions_href_list(hrefs: &BTreeSet<Href>) {
 }
 
 fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
+    let arena = bumpalo::Bump::new();
+
     let extension = match path.extension() {
         Some(x) => x,
         None => return Err(anyhow!("File has no extension, cannot determine type")),
@@ -284,8 +287,9 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
         }
         Some(x) if HTML_FILES.contains(&x) => {
             let document = Document::new(Path::new(""), &path);
-            let mut links = Vec::new();
+            let mut links = BumpVec::new_in(&arena);
             document.links::<DebugParagraphWalker<ParagraphHasher>>(
+                &arena,
                 &mut Vec::new(),
                 &mut links,
                 false,
@@ -364,16 +368,14 @@ fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
         .try_fold(
             // apparently can't use arena allocations here because that would make values !Send
             // also because quick-xml specifically wants std vec
-            || (C::new(), 0, 0),
-            |(mut collector, mut documents_count, mut file_count), entry| {
-                let mut xml_buf = Vec::new();
-                let mut link_buf = Vec::new();
-
+            || (bumpalo::Bump::new(), Vec::new(), C::new(), 0, 0),
+            |(mut arena, mut xml_buf, mut collector, mut documents_count, mut file_count),
+             entry| {
                 let path = entry.path();
                 let document = Document::new(&base_path, &path);
 
                 collector.ingest(Link::Defines(DefinedLink {
-                    href: document.href.clone(),
+                    href: document.href(),
                 }));
                 file_count += 1;
 
@@ -383,22 +385,38 @@ fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
                     .and_then(|extension| Some(HTML_FILES.contains(&extension.to_str()?)))
                     .unwrap_or(false)
                 {
-                    return Ok((collector, documents_count, file_count));
+                    return Ok((arena, xml_buf, collector, documents_count, file_count));
                 }
 
+                let mut link_buf = BumpVec::new_in(&arena);
                 document
-                    .links::<P>(&mut xml_buf, &mut link_buf, check_anchors, get_paragraphs)
+                    .links::<P>(
+                        &arena,
+                        &mut xml_buf,
+                        &mut link_buf,
+                        check_anchors,
+                        get_paragraphs,
+                    )
                     .with_context(|| format!("Failed to read file {}", document.path.display()))?;
+
+                xml_buf.clear();
 
                 for link in link_buf {
                     collector.ingest(link);
                 }
 
+                arena.reset();
+
                 documents_count += 1;
 
-                Ok((collector, documents_count, file_count))
+                Ok((arena, xml_buf, collector, documents_count, file_count))
             },
         )
+        .map(|result| {
+            result.map(|(_, _, collector, documents_count, file_count)| {
+                (collector, documents_count, file_count)
+            })
+        })
         .try_reduce(
             || (C::new(), 0, 0),
             |(mut collector, mut documents_count, mut file_count),

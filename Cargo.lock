@@ -66,6 +66,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bumpalo"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e8c087f005730276d1096a652e92a8bacee2e2472bcc9715a74d2bec38b5820"
+
+[[package]]
 name = "cc"
 version = "1.0.61"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -297,6 +303,7 @@ version = "0.1.8"
 dependencies = [
  "anyhow",
  "blake3",
+ "bumpalo",
  "jwalk",
  "patricia_tree",
  "pulldown-cmark",
