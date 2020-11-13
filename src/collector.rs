@@ -5,11 +5,11 @@ use patricia_tree::PatriciaMap;
 use crate::html::{Href, Link, UsedLink};
 
 #[cfg(unix)]
-fn bytes_to_path(bytes: &[u8]) -> PathBuf {
-    use std::ffi::OsStr;
-    use std::os::unix::ffi::OsStrExt;
+fn bytes_to_path(bytes: Vec<u8>) -> PathBuf {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
 
-    OsStr::from_bytes(bytes).into()
+    OsString::from_vec(bytes).into()
 }
 
 #[cfg(unix)]
@@ -20,13 +20,13 @@ fn path_to_bytes(path: &Path) -> &[u8] {
 }
 
 #[cfg(not(unix))]
-fn bytes_to_path(bytes: &[u8]) -> PathBuf {
+fn bytes_to_path(bytes: Vec<u8>) -> PathBuf {
     unsafe { String::from_utf8_unchecked(bytes).into() }
 }
 
 #[cfg(not(unix))]
 fn path_to_bytes(path: &Path) -> &[u8] {
-    path.to_str().expect("Invalid Unicode in path")
+    path.to_str().expect("Invalid Unicode in path").as_bytes()
 }
 
 impl<'a> AsRef<[u8]> for Href<'a> {
@@ -173,7 +173,7 @@ impl<P: Copy + PartialEq> BrokenLinkCollector<P> {
                     broken_links.push(BrokenLink {
                         hard_404,
                         link: OwnedUsedLink {
-                            path: bytes_to_path(&path),
+                            path: bytes_to_path(path),
                             paragraph,
                             href: href.clone(),
                         },
