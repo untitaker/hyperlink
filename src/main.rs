@@ -495,6 +495,7 @@ fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(),
     let mut link_no_paragraph = 0;
     let mut link_multiple_sources = 0;
     let mut link_no_source = 0;
+    let mut link_single_source = 0;
     // We only care about HTML's used links because paragraph matching is exclusively for error
     // messages that point to the broken link.
     for link in &html_result.collector.used_links {
@@ -513,6 +514,8 @@ fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(),
                 if sources.len() != 1 {
                     println!("multiple sources: {} in {}", link.href, link.path.display());
                     link_multiple_sources += 1;
+                } else {
+                    link_single_source += 1;
                 }
             }
             None => {
@@ -529,6 +532,7 @@ fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(),
         link_multiple_sources
     );
     println!("{} links with no sources", link_no_source);
+    println!("{} links with one potential source (perfect match)", link_single_source);
 
     Ok(())
 }
