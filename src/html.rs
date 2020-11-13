@@ -31,8 +31,11 @@ fn push_and_canonicalize(base: &mut BumpString, path: &str) {
         base.truncate(base.rfind('/').unwrap_or(0));
     }
 
-    for component in path.split('/') {
+    let num_slashes = path.matches('/').count();
+
+    for (i, component) in path.split('/').enumerate() {
         match component {
+            "index.html" | "index.htm" if i == num_slashes => {}
             "" | "." => {}
             ".." => {
                 base.truncate(base.rfind('/').unwrap_or(0));
@@ -48,7 +51,7 @@ fn push_and_canonicalize(base: &mut BumpString, path: &str) {
 }
 
 #[cfg(test)]
-mod test {
+mod test_push_and_canonicalize {
     use super::push_and_canonicalize as push_and_canonicalize_impl;
     use super::BumpString;
 
@@ -60,7 +63,7 @@ mod test {
     }
 
     #[test]
-    fn test_push_and_canonicalize() {
+    fn basic() {
         let mut base = String::from("2019/");
         let path = "../feed.xml";
         push_and_canonicalize(&mut base, path);
@@ -68,7 +71,7 @@ mod test {
     }
 
     #[test]
-    fn test_push_and_canonicalize2() {
+    fn files() {
         let mut base = String::from("contact.html");
         let path = "contact.html";
         push_and_canonicalize(&mut base, path);
@@ -76,7 +79,7 @@ mod test {
     }
 
     #[test]
-    fn test_push_and_canonicalize3() {
+    fn empty_base() {
         let mut base = String::from("");
         let path = "./2014/article.html";
         push_and_canonicalize(&mut base, path);
@@ -84,7 +87,7 @@ mod test {
     }
 
     #[test]
-    fn test_push_and_canonicalize_empty_href() {
+    fn empty_href() {
         let mut base = String::from("./foo/install.html");
         let path = "";
         push_and_canonicalize(&mut base, path);
@@ -93,6 +96,22 @@ mod test {
         let mut base = String::from("./foo/");
         push_and_canonicalize(&mut base, path);
         assert_eq!(base, "./foo");
+    }
+
+    #[test]
+    fn index_html() {
+        let mut base = String::from("foo/bar.html");
+        let path = "index.html";
+        push_and_canonicalize(&mut base, path);
+        assert_eq!(base, "foo");
+    }
+
+    #[test]
+    fn index_html_middle() {
+        let mut base = String::from("foo/bar.html");
+        let path = "index.html/baz.html";
+        push_and_canonicalize(&mut base, path);
+        assert_eq!(base, "foo/index.html/baz.html");
     }
 }
 
