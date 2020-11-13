@@ -401,6 +401,8 @@ fn test_document_links() {
         &mut Vec::new(),
         &mut links,
         r#"""
+        <!doctype html>
+        &nbsp;
     <a href="../../ruby/" />
     <a href="/platforms/perl/">Perl</a>
 
