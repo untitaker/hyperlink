@@ -87,10 +87,7 @@ enum LinkState<P> {
 impl<P: Copy> LinkState<P> {
     fn add_usage(&mut self, link: &UsedLink<P>) {
         if let LinkState::Undefined(ref mut links) = self {
-            links.insert(
-                path_to_bytes(&link.path),
-                link.paragraph.as_ref().copied(),
-            );
+            links.insert(path_to_bytes(&link.path), link.paragraph.as_ref().copied());
         }
     }
 
