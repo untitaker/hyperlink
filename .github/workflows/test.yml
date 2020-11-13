@@ -12,7 +12,19 @@ env:
 jobs:
   build_and_test:
     name: Build and test
-    runs-on: ubuntu-latest
+
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        build: [linux, macos, windows]
+        include:
+          - build: linux
+            os: ubuntu-latest
+          - build: macos
+            os: macos-latest
+          - build: windows
+            os: windows-latest
+
     steps:
       - uses: actions/checkout@v2
       - uses: actions/cache@v2
