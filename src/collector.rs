@@ -21,12 +21,12 @@ fn path_to_bytes(path: &Path) -> &[u8] {
 
 #[cfg(not(unix))]
 fn bytes_to_path(bytes: &[u8]) -> PathBuf {
-    unsafe { String::from_utf8_unchecked(path).into() }
+    unsafe { String::from_utf8_unchecked(bytes).into() }
 }
 
 #[cfg(not(unix))]
 fn path_to_bytes(path: &Path) -> &[u8] {
-    link.path.to_str().expect("Invalid Unicode in path")
+    path.to_str().expect("Invalid Unicode in path")
 }
 
 impl<'a> AsRef<[u8]> for Href<'a> {
