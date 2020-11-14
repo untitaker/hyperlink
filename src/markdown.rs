@@ -54,7 +54,7 @@ impl DocumentSource {
                 }
                 Event::Text(text) | Event::Code(text) => {
                     if in_paragraph {
-                        walker.update(text.as_ref());
+                        walker.update(text.as_bytes());
                     }
                 }
                 _ => {}

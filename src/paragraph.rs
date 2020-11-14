@@ -15,13 +15,13 @@ pub trait ParagraphWalker: Send {
     type Paragraph: Clone + Eq + PartialEq + Hash + Ord + PartialOrd + Send;
 
     fn new() -> Self;
-    fn update_raw(&mut self, text: &str);
+    fn update_raw(&mut self, text: &[u8]);
     fn finish_paragraph(&mut self) -> Option<Self::Paragraph>;
 
-    fn update(&mut self, text: &str) {
-        for word in text.trim().split_whitespace() {
-            if !word.is_empty() {
-                self.update_raw(word.trim());
+    fn update(&mut self, text: &[u8]) {
+        for c in text {
+            if !c.is_ascii_whitespace() {
+                self.update_raw(&[*c]);
             }
         }
     }
@@ -36,8 +36,8 @@ impl ParagraphWalker for ParagraphHasher {
         }
     }
 
-    fn update_raw(&mut self, text: &str) {
-        self.hasher.update(text.as_bytes());
+    fn update_raw(&mut self, text: &[u8]) {
+        self.hasher.update(text);
     }
 
     fn finish_paragraph(&mut self) -> Option<Self::Paragraph> {
@@ -79,9 +79,9 @@ where
         }
     }
 
-    fn update_raw(&mut self, text: &str) {
+    fn update_raw(&mut self, text: &[u8]) {
         self.inner.update(text);
-        self.contents.push_str(text);
+        self.contents.push_str(&String::from_utf8_lossy(text));
     }
 
     fn finish_paragraph(&mut self) -> Option<Self::Paragraph> {
@@ -105,7 +105,7 @@ impl ParagraphWalker for NoopParagraphWalker {
         NoopParagraphWalker
     }
 
-    fn update_raw(&mut self, _text: &str) {}
+    fn update_raw(&mut self, _text: &[u8]) {}
 
     fn finish_paragraph(&mut self) -> Option<Self::Paragraph> {
         None

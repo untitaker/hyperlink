@@ -532,7 +532,10 @@ fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(),
         link_multiple_sources
     );
     println!("{} links with no sources", link_no_source);
-    println!("{} links with one potential source (perfect match)", link_single_source);
+    println!(
+        "{} links with one potential source (perfect match)",
+        link_single_source
+    );
 
     Ok(())
 }
