@@ -32,7 +32,7 @@ jobs:
           path: |
             ~/.cargo
             ./target/
-          key: ${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-v2
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
