@@ -28,11 +28,12 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - uses: actions/cache@v2
+        if: runner.os != 'macOS'
         with:
           path: |
             ~/.cargo
             ./target/
-          key: ${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-v2
+          key: ${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
