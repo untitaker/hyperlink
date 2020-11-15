@@ -1,33 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use patricia_tree::PatriciaMap;
 
 use crate::html::{Href, Link, UsedLink};
-
-#[cfg(unix)]
-fn bytes_to_path(bytes: Vec<u8>) -> PathBuf {
-    use std::ffi::OsString;
-    use std::os::unix::ffi::OsStringExt;
-
-    OsString::from_vec(bytes).into()
-}
-
-#[cfg(unix)]
-fn path_to_bytes(path: &Path) -> &[u8] {
-    use std::os::unix::ffi::OsStrExt;
-
-    path.as_os_str().as_bytes()
-}
-
-#[cfg(not(unix))]
-fn bytes_to_path(bytes: Vec<u8>) -> PathBuf {
-    unsafe { String::from_utf8_unchecked(bytes).into() }
-}
-
-#[cfg(not(unix))]
-fn path_to_bytes(path: &Path) -> &[u8] {
-    path.to_str().expect("Invalid Unicode in path").as_bytes()
-}
 
 impl<'a> AsRef<[u8]> for Href<'a> {
     fn as_ref(&self) -> &[u8] {
@@ -44,7 +20,7 @@ pub trait LinkCollector<P: Send>: Send {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct OwnedUsedLink<P> {
     pub href: String,
-    pub path: PathBuf,
+    pub path: Arc<PathBuf>,
     pub paragraph: Option<P>,
 }
 
@@ -81,13 +57,13 @@ enum LinkState<P> {
     Defined,
     /// We have not *yet* observed a DefinedLink and therefore need to keep track of all link
     /// usages for potential error reporting.
-    Undefined(PatriciaMap<Option<P>>), // (path) -> paragraph
+    Undefined(Vec<(Arc<PathBuf>, Option<P>)>),
 }
 
 impl<P: Copy> LinkState<P> {
     fn add_usage(&mut self, link: &UsedLink<P>) {
         if let LinkState::Undefined(ref mut links) = self {
-            links.insert(path_to_bytes(&link.path), link.paragraph.as_ref().copied());
+            links.push((link.path.clone(), link.paragraph.clone()));
         }
     }
 
@@ -123,7 +99,7 @@ impl<P: Send + Copy> LinkCollector<P> for BrokenLinkCollector<P> {
                 if let Some(state) = self.links.get_mut(&used_link.href) {
                     state.add_usage(&used_link);
                 } else {
-                    let mut state = LinkState::Undefined(PatriciaMap::new());
+                    let mut state = LinkState::Undefined(Vec::new());
                     state.add_usage(&used_link);
                     self.links.insert(used_link.href, state);
                 }
@@ -169,12 +145,12 @@ impl<P: Copy + PartialEq> BrokenLinkCollector<P> {
                     true
                 };
 
-                for (path, &paragraph) in links.iter() {
+                for (path, paragraph) in links.iter() {
                     broken_links.push(BrokenLink {
                         hard_404,
                         link: OwnedUsedLink {
-                            path: bytes_to_path(path),
-                            paragraph,
+                            path: path.clone(),
+                            paragraph: paragraph.clone(),
                             href: href.clone(),
                         },
                     });

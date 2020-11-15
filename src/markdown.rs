@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Error;
 use pulldown_cmark::{Event, Parser, Tag};
@@ -11,16 +12,18 @@ static PARAGRAPH_TAGS: &[Tag<'_>] = &[Tag::Paragraph, Tag::Item];
 
 #[derive(Clone)]
 pub struct DocumentSource {
-    pub path: PathBuf,
+    pub path: Arc<PathBuf>,
 }
 
 impl DocumentSource {
     pub fn new(path: PathBuf) -> Self {
-        DocumentSource { path }
+        DocumentSource {
+            path: Arc::new(path),
+        }
     }
 
     pub fn paragraphs<P: ParagraphWalker>(&self) -> Result<Vec<P::Paragraph>, Error> {
-        let text_raw = fs::read_to_string(&self.path)?;
+        let text_raw = fs::read_to_string(&*self.path)?;
         let mut text = String::new();
         for mut line in text_raw.lines() {
             if line.starts_with('<') {

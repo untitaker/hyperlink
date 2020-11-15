@@ -1,8 +1,9 @@
 use std::fmt;
 use std::fs;
 use std::io::{BufReader, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str;
+use std::sync::Arc;
 
 use anyhow::Error;
 use bumpalo::collections::vec::Vec as BumpVec;
@@ -139,7 +140,7 @@ impl<'a> fmt::Display for Href<'a> {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct UsedLink<'a, P> {
     pub href: Href<'a>,
-    pub path: &'a Path,
+    pub path: Arc<PathBuf>,
     pub paragraph: Option<P>,
 }
 
@@ -163,14 +164,14 @@ impl<'a, P> Link<'a, P> {
     }
 }
 
-pub struct Document<'a> {
-    pub path: &'a Path,
+pub struct Document {
+    pub path: Arc<PathBuf>,
     href: String,
     pub is_index_html: bool,
 }
 
-impl<'a> Document<'a> {
-    pub fn new(base_path: &Path, path: &'a Path) -> Self {
+impl Document {
+    pub fn new(base_path: &Path, path: &Path) -> Self {
         let mut href_path = path
             .strip_prefix(base_path)
             .expect("base_path is not a base of path");
@@ -199,7 +200,7 @@ impl<'a> Document<'a> {
         }
 
         Document {
-            path,
+            path: Arc::new(path.to_owned()),
             href,
             is_index_html,
         }
@@ -247,13 +248,12 @@ impl<'a> Document<'a> {
     ) -> Result<(), Error>
     where
         'b: 'l,
-        'a: 'l,
     {
         self.links_from_read::<_, P>(
             arena,
             xml_buf,
             sink,
-            fs::File::open(&self.path)?,
+            fs::File::open(&*self.path)?,
             check_anchors,
             get_paragraphs,
         )
@@ -270,7 +270,6 @@ impl<'a> Document<'a> {
     ) -> Result<(), Error>
     where
         'b: 'l,
-        'a: 'l,
     {
         let mut reader = Reader::from_reader(BufReader::new(read));
         reader.trim_text(true);
@@ -308,7 +307,7 @@ impl<'a> Document<'a> {
                                             check_anchors,
                                             str::from_utf8(&attr.unescaped_value()?)?,
                                         ),
-                                        path: &self.path,
+                                        path: self.path.clone(),
                                         paragraph: None,
                                     }));
                                 }
@@ -437,7 +436,7 @@ fn test_document_links() {
     let used_link = |x: &'static str| {
         Link::Uses(UsedLink {
             href: Href(x.into()),
-            path: &doc.path,
+            path: doc.path.clone(),
             paragraph: None,
         })
     };
