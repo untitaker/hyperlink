@@ -16,5 +16,5 @@ blake3 = "0.3.7"
 # need https://github.com/tafia/quick-xml/pull/239
 quick-xml = { version = "0.20.0", git = "https://github.com/untitaker/quick-xml", branch = "html-doctype" }
 jwalk = "0.5.1"
-patricia_tree = "0.2.0"
+patricia_tree = "0.3.0"
 bumpalo = { version = "3.4.0", features = ["collections"] }
