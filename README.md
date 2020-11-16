@@ -20,7 +20,7 @@ A command-line tool to find broken links in your static site.
 
   * No support for the [`<base>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base) tag.
 
-  * No support for external links. It does not know how to speak HTTP.
+  * [No support for external links.](https://github.com/untitaker/hyperlink/issues/5) It does not know how to speak HTTP.
 
 * Does not honor `robots.txt`. A broken link is still broken for users even if
   not indexed by Google.
