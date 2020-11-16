@@ -45,7 +45,7 @@ Very fast link checker for static sites.
 Or as GitHub action:
 
 ```yaml
-- uses: untitaker/hyperlink@0.1.11
+- uses: untitaker/hyperlink@0.1.12
   with:
     args: public/ --sources src/
 ```
