@@ -1,6 +1,20 @@
 # hyperlink
 
-Very fast link checker for static sites.
+A command-line tool to find broken links in your static site.
+
+* **Fast.** [docs.sentry.io](https://github.com/getsentry/sentry-docs) produces
+  1.1 GB of HTML files. All [alternatives](#alternatives) we tried were slower
+  than `hyperlink` on this site.
+
+  `hyperlink` handles this amount of data in 4 seconds on a MacBook Pro 2018.
+
+* **Pay for what you need.** By default, `hyperlink` checks for hard 404s in
+  internal links only. Anything beyond that is opt-in. See [Options](#options)
+  for a list of features to enable.
+
+* **Maps back errors to source files.** If your static site was created from
+  Markdown files, `hyperlink` can try to find the original broken link by
+  fuzzy-matching the content around it. See the [`--sources` option](#options).
 
 * Supports traversing file-system paths only, no arbitrary URLs.
 
@@ -16,16 +30,6 @@ Very fast link checker for static sites.
   the chrome around it.
 
 * Only supports UTF-8 encoded HTML files.
-
-* **Fast.** [docs.sentry.io](https://github.com/getsentry/sentry-docs) produces
-  1.1 GB of HTML files. All [alternatives](#alternatives) we tried were slower
-  than `hyperlink` on this site.
-
-  `hyperlink` handles this amount of data in 4 seconds on a MacBook Pro 2018.
-
-* **Pay for what you need.** By default, `hyperlink` checks for hard 404s in
-  internal links only. Anything beyond that is opt-in. See [Options](#options)
-  for a list of features to enable.
 
 ## Installation and Usage
 
