@@ -63,7 +63,7 @@ enum LinkState<P> {
 impl<P: Copy> LinkState<P> {
     fn add_usage(&mut self, link: &UsedLink<P>) {
         if let LinkState::Undefined(ref mut links) = self {
-            links.push((link.path.clone(), link.paragraph.clone()));
+            links.push((link.path.clone(), link.paragraph));
         }
     }
 
@@ -150,7 +150,7 @@ impl<P: Copy + PartialEq> BrokenLinkCollector<P> {
                         hard_404,
                         link: OwnedUsedLink {
                             path: path.clone(),
-                            paragraph: paragraph.clone(),
+                            paragraph: *paragraph,
                             href: href.clone(),
                         },
                     });

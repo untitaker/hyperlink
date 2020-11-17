@@ -263,7 +263,7 @@ fn print_github_actions_href_list(
     hrefs: &BTreeSet<(Option<usize>, String)>,
 ) -> Result<(), Error> {
     let mut prev_lineno = None;
-    for (i, (lineno, href)) in hrefs.into_iter().enumerate() {
+    for (i, (lineno, href)) in hrefs.iter().enumerate() {
         if prev_lineno != *lineno || i == 0 {
             print!(
                 "\n::error file={},line={}::{}:",
