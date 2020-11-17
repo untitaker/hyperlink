@@ -1,4 +1,5 @@
-use std::fs;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -22,10 +23,14 @@ impl DocumentSource {
         }
     }
 
-    pub fn paragraphs<P: ParagraphWalker>(&self) -> Result<Vec<P::Paragraph>, Error> {
-        let text_raw = fs::read_to_string(&*self.path)?;
+    pub fn paragraphs<P: ParagraphWalker>(&self) -> Result<Vec<(P::Paragraph, usize)>, Error> {
         let mut text = String::new();
-        for mut line in text_raw.lines() {
+        // line_numbers[0] = 32 ... line 0 ends at `text` offset 32
+        let mut line_numbers = Vec::new();
+        for line in BufReader::new(File::open(&*self.path)?).lines() {
+            let line = line?;
+            let mut line = line.as_str();
+
             if line.starts_with('<') {
                 continue;
             }
@@ -36,13 +41,14 @@ impl DocumentSource {
 
             text.push_str(line);
             text.push('\n');
+            line_numbers.push(text.len());
         }
 
         let mut in_paragraph = false;
         let mut walker = P::new();
         let mut rv = Vec::new();
 
-        for event in Parser::new(&text) {
+        for (event, range) in Parser::new(&text).into_offset_iter() {
             match event {
                 Event::Start(tag) if PARAGRAPH_TAGS.contains(&tag) => {
                     walker.finish_paragraph();
@@ -51,7 +57,13 @@ impl DocumentSource {
                 Event::End(tag) if PARAGRAPH_TAGS.contains(&tag) => {
                     let paragraph = walker.finish_paragraph();
                     if in_paragraph {
-                        rv.extend(paragraph);
+                        if let Some(paragraph) = paragraph {
+                            let lineno = match line_numbers.binary_search(&range.end) {
+                                Ok(i) => i + 1,
+                                Err(i) => i + 1,
+                            };
+                            rv.push((paragraph, lineno));
+                        }
                     }
                     in_paragraph = false;
                 }

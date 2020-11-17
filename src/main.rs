@@ -172,7 +172,7 @@ where
                 debug_assert!(!document_sources.is_empty());
                 had_sources = true;
 
-                for source in *document_sources {
+                for (source, lineno) in *document_sources {
                     let (bad_links, bad_anchors) = bad_links_and_anchors
                         .entry((!had_sources, source.path.clone()))
                         .or_insert_with(|| (BTreeSet::new(), BTreeSet::new()));
@@ -182,7 +182,7 @@ where
                     } else {
                         bad_anchors
                     }
-                    .insert(broken_link.link.href.clone());
+                    .insert((Some(*lineno), broken_link.link.href.clone()));
                 }
             }
         }
@@ -197,7 +197,7 @@ where
             } else {
                 bad_anchors
             }
-            .insert(broken_link.link.href);
+            .insert((None, broken_link.link.href));
         }
     }
 
@@ -208,32 +208,21 @@ where
     for ((_is_raw_file, filepath), (bad_links, bad_anchors)) in bad_links_and_anchors {
         println!("{}", filepath.display());
 
-        for href in &bad_links {
-            println!("  error: bad link {}", href);
+        for (lineno, href) in &bad_links {
+            print_href_error("error: bad link", &href, *lineno);
         }
 
-        for href in &bad_anchors {
-            println!("  warning: bad anchor {}", href);
+        for (lineno, href) in &bad_anchors {
+            print_href_error("error: bad link", &href, *lineno);
         }
 
         if github_actions {
             if !bad_links.is_empty() {
-                print!(
-                    "::error file={}::bad links:",
-                    filepath.canonicalize()?.display()
-                );
-                print_github_actions_href_list(&bad_links);
-                println!();
+                print_github_actions_href_list("bad links", &*filepath, &bad_links)?;
             }
 
             if !bad_anchors.is_empty() {
-                print!(
-                    "::error file={}::bad anchors:",
-                    filepath.canonicalize()?.display()
-                );
-
-                print_github_actions_href_list(&bad_anchors);
-                println!();
+                print_github_actions_href_list("bad anchors", &*filepath, &bad_anchors)?;
             }
         }
 
@@ -260,13 +249,40 @@ where
     Ok(())
 }
 
-fn print_github_actions_href_list(hrefs: &BTreeSet<String>) {
-    for href in hrefs {
+fn print_href_error(message: &'static str, href: &str, lineno: Option<usize>) {
+    if let Some(lineno) = lineno {
+        println!("  {} {} at line {}", message, href, lineno);
+    } else {
+        println!("  {} {}", message, href);
+    }
+}
+
+fn print_github_actions_href_list(
+    message: &'static str,
+    filepath: &Path,
+    hrefs: &BTreeSet<(Option<usize>, String)>,
+) -> Result<(), Error> {
+    let mut prev_lineno = None;
+    for (i, (lineno, href)) in hrefs.into_iter().enumerate() {
+        if prev_lineno != *lineno || i == 0 {
+            print!(
+                "\n::error file={},line={}::{}:",
+                filepath.canonicalize()?.display(),
+                lineno.unwrap_or(1),
+                message,
+            );
+        }
+        prev_lineno = *lineno;
+
         // %0A -- escaped newline
         //
         // https://github.community/t/what-is-the-correct-character-escaping-for-workflow-command-values-e-g-echo-xxxx/118465/5
         print!("%0A  {}", href);
     }
+
+    println!();
+
+    Ok(())
 }
 
 fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
@@ -283,6 +299,7 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
             source
                 .paragraphs::<DebugParagraphWalker<ParagraphHasher>>()?
                 .into_iter()
+                .map(|(paragraph, lineno)| (paragraph, Some(lineno)))
                 .collect()
         }
         Some(x) if HTML_FILES.contains(&x) => {
@@ -297,14 +314,18 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
             )?;
             links
                 .into_iter()
-                .filter_map(|link| link.into_paragraph())
+                .filter_map(|link| Some((link.into_paragraph()?, None)))
                 .collect()
         }
         _ => return Err(anyhow!("Unknown file extension")),
     };
 
-    for paragraph in paragraphs {
-        println!("{}", paragraph);
+    for (paragraph, lineno) in paragraphs {
+        if let Some(lineno) = lineno {
+            println!("{}: {}", lineno, paragraph);
+        } else {
+            println!("{}", paragraph);
+        }
     }
 
     Ok(())
@@ -440,7 +461,7 @@ fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
     })
 }
 
-type MarkdownResult<P> = BTreeMap<P, Vec<DocumentSource>>;
+type MarkdownResult<P> = BTreeMap<P, Vec<(DocumentSource, usize)>>;
 
 fn extract_markdown_paragraphs<P: ParagraphWalker>(
     sources_path: &Path,
@@ -458,11 +479,11 @@ fn extract_markdown_paragraphs<P: ParagraphWalker>(
                 return Ok(paragraphs);
             }
 
-            for paragraph in source
+            for paragraph_and_lineno in source
                 .paragraphs::<P>()
                 .with_context(|| format!("Failed to read file {}", source.path.display()))?
             {
-                paragraphs.push((source.clone(), paragraph));
+                paragraphs.push((source.clone(), paragraph_and_lineno));
             }
             Ok(paragraphs)
         })
@@ -471,11 +492,11 @@ fn extract_markdown_paragraphs<P: ParagraphWalker>(
     let mut paragraps_to_sourcefile = BTreeMap::new();
 
     for result in results {
-        for (source, paragraph) in result? {
+        for (source, (paragraph, lineno)) in result? {
             paragraps_to_sourcefile
                 .entry(paragraph)
                 .or_insert_with(Vec::new)
-                .push(source.clone());
+                .push((source.clone(), lineno));
         }
     }
 
