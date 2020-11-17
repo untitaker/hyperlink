@@ -305,7 +305,7 @@ impl Document {
                                         href: self.join(
                                             arena,
                                             check_anchors,
-                                            str::from_utf8(&attr.unescaped_value()?)?,
+                                            str::from_utf8(&attr.value)?,
                                         ),
                                         path: self.path.clone(),
                                         paragraph: None,
@@ -369,7 +369,6 @@ impl Document {
                     }
                 }
                 Event::Text(e) if get_paragraphs && in_paragraph => {
-                    // XXX: Unescape properly https://github.com/tafia/quick-xml/issues/238
                     let text = e.unescaped().unwrap_or_else(|_| e.escaped().into());
                     paragraph_walker.update(&text);
                 }
@@ -425,7 +424,7 @@ fn test_document_links() {
     <a href="/platforms/perl/">Perl</a>
 
     <a href=../../rust/>
-    <a href='../../go/' href='../../go/'>
+    <a href='../../go/?foo=bar&bar=baz' href='../../go/'>
     """#
         .as_bytes(),
         false,
