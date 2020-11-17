@@ -293,7 +293,7 @@ impl Document {
 
                     macro_rules! extract_used_link {
                         ($attr_name:expr) => {
-                            for attr in e.html_attributes() {
+                            for attr in e.html_attributes().with_checks(false) {
                                 let attr = attr?;
 
                                 if attr.key == $attr_name
@@ -318,7 +318,7 @@ impl Document {
                     macro_rules! extract_anchor_def {
                         ($attr_name:expr) => {
                             if check_anchors {
-                                for attr in e.html_attributes() {
+                                for attr in e.html_attributes().with_checks(false) {
                                     let attr = attr?;
 
                                     if attr.key == $attr_name {
@@ -425,7 +425,7 @@ fn test_document_links() {
     <a href="/platforms/perl/">Perl</a>
 
     <a href=../../rust/>
-    <a href='../../go/'>
+    <a href='../../go/' href='../../go/'>
     """#
         .as_bytes(),
         false,
@@ -447,6 +447,7 @@ fn test_document_links() {
             used_link("platforms/ruby"),
             used_link("platforms/perl"),
             used_link("platforms/rust"),
+            used_link("platforms/go"),
             used_link("platforms/go"),
         ]
     );
