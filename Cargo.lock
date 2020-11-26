@@ -422,7 +422,7 @@ dependencies = [
 [[package]]
 name = "quick-xml"
 version = "0.20.0"
-source = "git+https://github.com/tafia/quick-xml#f3f88b6cdddb18c672133e917913346e5017d5ed"
+source = "git+https://github.com/tafia/quick-xml#ef58ed9ddc29c4205f4678ee9de4ff33884364f2"
 dependencies = [
  "memchr",
 ]
