@@ -29,7 +29,7 @@ struct Cli {
     ///
     /// This will be assumed to be the root path of your server as well, so
     /// href="/foo" will resolve to that folder's subfolder foo.
-    #[structopt(verbatim_doc_comment, required_if("subcommand", "None"))]
+    #[structopt(verbatim_doc_comment)]
     base_path: Option<PathBuf>,
 
     /// How many threads to use, default is to try and saturate CPU.
@@ -115,7 +115,19 @@ fn main() -> Result<(), Error> {
         None => {}
     }
 
-    let base_path = base_path.unwrap();
+    let base_path = match base_path {
+        Some(base_path) => base_path,
+        None => {
+            // Invalid invocation. Ultra hack to show help if no arguments are provided. Structopt
+            // does not seem to have a functional way to require either an argument or a
+            // subcommand. required_if etc don't actually work.
+            let help_message = Cli::from_iter_safe(&["hyperlink", "--help"])
+                .map(|_| ())
+                .unwrap_err();
+            eprintln!("{}", help_message.message);
+            process::exit(1);
+        }
+    };
 
     if sources_path.is_some() {
         check_links::<ParagraphHasher>(base_path, check_anchors, sources_path, github_actions)
