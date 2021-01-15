@@ -49,7 +49,7 @@ A command-line tool to find broken links in your static site.
 Or as GitHub action:
 
 ```yaml
-- uses: untitaker/hyperlink@0.1.13
+- uses: untitaker/hyperlink@0.1.14
   with:
     args: public/ --sources src/
 ```
