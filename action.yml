@@ -1,5 +1,8 @@
-name: Hyperlink
+name: Hyperlink link checker
 description: Run hyperlink link checker on a folder of static HTML
+branding:
+  icon: bookmark
+  color: purple
 inputs:
   args:
     description: CLI arguments to hyperlink
