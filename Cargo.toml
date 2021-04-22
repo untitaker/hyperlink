@@ -21,5 +21,5 @@ bumpalo = { version = "3.4.0", features = ["collections"] }
 
 [dev-dependencies]
 assert_cmd = "1.0.2"
-assert_fs = "1.0.0"
+assert_fs = "1.0.1"
 predicates = "1.0.5"
