@@ -13,8 +13,7 @@ rayon = "1.5.0"
 pulldown-cmark = "0.8.0"
 blake3 = "0.3.7"
 
-# need https://github.com/tafia/quick-xml/pull/239
-quick-xml = { version = "0.20.0", git = "https://github.com/tafia/quick-xml" }
+quick-xml = "0.22.0"
 jwalk = "0.5.1"
 patricia_tree = "0.3.0"
 bumpalo = { version = "3.4.0", features = ["collections"] }
