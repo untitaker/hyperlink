@@ -13,7 +13,7 @@ impl<'a> AsRef<[u8]> for Href<'a> {
 
 pub trait LinkCollector<P: Send>: Send {
     fn new() -> Self;
-    fn ingest<'a>(&mut self, link: Link<'a, P>);
+    fn ingest(&mut self, link: Link<'_, P>);
     fn merge(&mut self, other: Self);
 }
 
@@ -36,7 +36,7 @@ impl<P: Send> LinkCollector<P> for UsedLinkCollector<P> {
         }
     }
 
-    fn ingest<'a>(&mut self, link: Link<'a, P>) {
+    fn ingest(&mut self, link: Link<'_, P>) {
         if let Link::Uses(used_link) = link {
             self.used_links.push(OwnedUsedLink {
                 href: used_link.href.0.to_owned(),
@@ -92,7 +92,7 @@ impl<P: Send + Copy> LinkCollector<P> for BrokenLinkCollector<P> {
         }
     }
 
-    fn ingest<'a>(&mut self, link: Link<'a, P>) {
+    fn ingest(&mut self, link: Link<'_, P>) {
         match link {
             Link::Uses(used_link) => {
                 self.used_link_count += 1;
