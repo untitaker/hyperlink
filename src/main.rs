@@ -588,15 +588,18 @@ mod tests {
         let mut cmd = Command::cargo_bin("hyperlink").unwrap();
         cmd.current_dir(site.path()).arg(".");
 
-        cmd.assert().failure().code(1).stdout(predicate::str::is_match(
-            r#"^Reading files
+        cmd.assert().failure().code(1).stdout(
+            predicate::str::is_match(
+                r#"^Reading files
 Checking 1 links from 1 files \(1 documents\)
 \..index\.html
   error: bad link bar.html
 
 Found 1 bad links
-"#
-        ).unwrap());
+"#,
+            )
+            .unwrap(),
+        );
         site.close().unwrap();
     }
 
@@ -610,8 +613,9 @@ Found 1 bad links
         let mut cmd = Command::cargo_bin("hyperlink").unwrap();
         cmd.current_dir(site.path()).arg(".").arg("--check-anchors");
 
-        cmd.assert().failure().code(2).stdout(predicate::str::is_match(
-            r#"^Reading files
+        cmd.assert().failure().code(2).stdout(
+            predicate::str::is_match(
+                r#"^Reading files
 Checking 1 links from 2 files \(2 documents\)
 \..index\.html
   error: bad link bar.html#goo
@@ -619,7 +623,9 @@ Checking 1 links from 2 files \(2 documents\)
 Found 0 bad links
 Found 1 bad anchors
 $"#,
-        ).unwrap());
+            )
+            .unwrap(),
+        );
         site.close().unwrap();
     }
 
