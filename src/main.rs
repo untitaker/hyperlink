@@ -153,13 +153,6 @@ where
         sources_path.is_some(),
     )?;
 
-    let paragraps_to_sourcefile = if let Some(ref sources_path) = sources_path {
-        println!("Reading source files");
-        extract_markdown_paragraphs::<P>(sources_path)?
-    } else {
-        BTreeMap::new()
-    };
-
     let used_links_len = html_result.collector.used_links_count();
     println!(
         "Checking {} links from {} files ({} documents)",
@@ -170,7 +163,23 @@ where
     let mut bad_links_count = 0;
     let mut bad_anchors_count = 0;
 
-    for broken_link in html_result.collector.get_broken_links(check_anchors) {
+    let mut broken_links = html_result
+        .collector
+        .get_broken_links(check_anchors)
+        .peekable();
+
+    let paragraps_to_sourcefile = if broken_links.peek().is_some() {
+        if let Some(ref sources_path) = sources_path {
+            println!("Found some broken links, reading source files");
+            extract_markdown_paragraphs::<P>(sources_path)?
+        } else {
+            BTreeMap::new()
+        }
+    } else {
+        BTreeMap::new()
+    };
+
+    for broken_link in broken_links {
         let mut had_sources = false;
 
         if broken_link.hard_404 {
