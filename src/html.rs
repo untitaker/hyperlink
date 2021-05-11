@@ -14,7 +14,7 @@ use quick_xml::Reader;
 use crate::paragraph::ParagraphWalker;
 
 static BAD_SCHEMAS: &[&str] = &[
-    "http://", "https://", "irc://", "ftp://", "mailto:", "data:",
+    "http://", "https://", "irc://", "ftp://", "mailto:", "data:", "//",
 ];
 
 static PARAGRAPH_TAGS: &[&[u8]] = &[b"p", b"li", b"dt", b"dd"];
