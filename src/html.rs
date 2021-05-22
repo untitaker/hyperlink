@@ -13,11 +13,21 @@ use quick_xml::Reader;
 
 use crate::paragraph::ParagraphWalker;
 
-static BAD_SCHEMAS: &[&str] = &[
-    "http://", "https://", "irc://", "ftp://", "mailto:", "data:", "//",
-];
+#[inline]
+fn is_paragraph_tag(tag: &[u8]) -> bool {
+    tag == b"p" || tag == b"li" || tag == b"dt" || tag == b"dd"
+}
 
-static PARAGRAPH_TAGS: &[&[u8]] = &[b"p", b"li", b"dt", b"dd"];
+#[inline]
+fn is_bad_schema(url: &[u8]) -> bool {
+    url.starts_with(b"http://")
+        || url.starts_with(b"https://")
+        || url.starts_with(b"irc://")
+        || url.starts_with(b"ftp://")
+        || url.starts_with(b"mailto:")
+        || url.starts_with(b"data:")
+        || url.starts_with(b"//")
+}
 
 #[inline]
 fn push_and_canonicalize(base: &mut BumpString, path: &str) {
@@ -285,7 +295,7 @@ impl Document {
             match reader.read_event(xml_buf)? {
                 Event::Eof => break,
                 Event::Start(ref e) => {
-                    if PARAGRAPH_TAGS.contains(&e.name()) {
+                    if is_paragraph_tag(e.name()) {
                         in_paragraph = true;
                         last_paragraph_i = sink.len();
                         paragraph_walker.finish_paragraph();
@@ -296,11 +306,7 @@ impl Document {
                             for attr in e.html_attributes().with_checks(false) {
                                 let attr = attr?;
 
-                                if attr.key == $attr_name
-                                    && BAD_SCHEMAS
-                                        .iter()
-                                        .all(|schema| !attr.value.starts_with(schema.as_bytes()))
-                                {
+                                if attr.key == $attr_name && !is_bad_schema(&attr.value) {
                                     sink.push(Link::Uses(UsedLink {
                                         href: self.join(
                                             arena,
@@ -352,7 +358,7 @@ impl Document {
                     extract_anchor_def!(b"id");
                 }
                 Event::End(e) if get_paragraphs => {
-                    if PARAGRAPH_TAGS.contains(&e.name()) {
+                    if is_paragraph_tag(e.name()) {
                         let paragraph = paragraph_walker.finish_paragraph();
                         if in_paragraph {
                             for link in &mut sink[last_paragraph_i..] {
