@@ -22,6 +22,11 @@ A command-line tool to find broken links in your static site.
 
   * [No support for external links.](https://github.com/untitaker/hyperlink/issues/5) It does not know how to speak HTTP.
 
+  * Even if you don't have a static site, you can put hyperlink to work by
+    first downloading the entire website using e.g.
+    [suckit](https://github.com/Skallwar/suckit). In certain cases this is
+    faster than other tools too.
+
 * Does not honor `robots.txt`. A broken link is still broken for users even if
   not indexed by Google.
 
