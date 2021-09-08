@@ -361,7 +361,7 @@ struct HtmlResult<C> {
 fn walk_files(base_path: &Path) -> impl ParallelIterator<Item = jwalk::DirEntry<((), ())>> {
     let entries = WalkDir::new(&base_path)
         .sort(true) // helps branch predictor (?)
-        .process_read_dir(|_, children| {
+        .process_read_dir(|_, _, _, children| {
             children.retain(|dir_entry_result| {
                 let entry = match dir_entry_result.as_ref() {
                     Ok(x) => x,
