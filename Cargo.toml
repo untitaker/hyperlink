@@ -7,7 +7,7 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
-structopt = "0.3.21"
+structopt = "0.3.23"
 anyhow = "1.0.40"
 rayon = "1.5.1"
 pulldown-cmark = "0.8.0"
