@@ -230,11 +230,11 @@ where
         println!("{}", filepath.display());
 
         for (lineno, href) in &bad_links {
-            print_href_error("error: bad link", &href, *lineno);
+            print_href_error("error: bad link", href, *lineno);
         }
 
         for (lineno, href) in &bad_anchors {
-            print_href_error("error: bad link", &href, *lineno);
+            print_href_error("error: bad link", href, *lineno);
         }
 
         if github_actions {
@@ -417,7 +417,7 @@ fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
             |(mut arena, mut xml_buf, mut collector, mut documents_count, mut file_count),
              entry| {
                 let path = entry.path();
-                let document = Document::new(&base_path, &path);
+                let document = Document::new(base_path, &path);
 
                 collector.ingest(Link::Defines(DefinedLink {
                     href: document.href(),

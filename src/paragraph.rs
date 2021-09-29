@@ -88,7 +88,7 @@ where
         let inner = self.inner.finish_paragraph()?;
         Some(DebugParagraph {
             inner,
-            contents: mem::replace(&mut self.contents, String::new()),
+            contents: mem::take(&mut self.contents),
         })
     }
 }
