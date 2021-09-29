@@ -358,14 +358,16 @@ struct HtmlResult<C> {
     file_count: usize,
 }
 
-fn walk_files(base_path: &Path) -> impl ParallelIterator<Item = jwalk::DirEntry<((), ())>> {
+fn walk_files(
+    base_path: &Path,
+) -> Result<impl ParallelIterator<Item = jwalk::DirEntry<((), ())>>, Error> {
     let entries = WalkDir::new(&base_path)
         .sort(true) // helps branch predictor (?)
         .process_read_dir(|_, _, _, children| {
             children.retain(|dir_entry_result| {
                 let entry = match dir_entry_result.as_ref() {
                     Ok(x) => x,
-                    Err(_) => return false,
+                    Err(_) => return true,
                 };
 
                 let file_type = entry.file_type();
@@ -387,21 +389,24 @@ fn walk_files(base_path: &Path) -> impl ParallelIterator<Item = jwalk::DirEntry<
         })
         .into_iter()
         .filter_map(|entry| {
-            let entry = entry.ok()?;
+            let entry = match entry {
+                Ok(x) => x,
+                Err(e) => return Some(Err(e)),
+            };
 
             if entry.file_type().is_dir() {
                 None
             } else {
-                Some(entry)
+                Some(Ok(entry))
             }
         })
         // XXX: cannot use par_bridge because of https://github.com/rayon-rs/rayon/issues/690
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
 
     // Minimize amount of LinkCollector instances created. This impacts parallelism but
     // `LinkCollector::merge` is rather slow.
     let min_len = entries.len() / rayon::current_num_threads();
-    entries.into_par_iter().with_min_len(min_len)
+    Ok(entries.into_par_iter().with_min_len(min_len))
 }
 
 fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
@@ -409,7 +414,7 @@ fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
     check_anchors: bool,
     get_paragraphs: bool,
 ) -> Result<HtmlResult<C>, Error> {
-    let result: Result<_, Error> = walk_files(base_path)
+    let result: Result<_, Error> = walk_files(base_path)?
         .try_fold(
             // apparently can't use arena allocations here because that would make values !Send
             // also because quick-xml specifically wants std vec
@@ -487,7 +492,7 @@ type MarkdownResult<P> = BTreeMap<P, Vec<(DocumentSource, usize)>>;
 fn extract_markdown_paragraphs<P: ParagraphWalker>(
     sources_path: &Path,
 ) -> Result<MarkdownResult<P::Paragraph>, Error> {
-    let results: Vec<Result<_, Error>> = walk_files(sources_path)
+    let results: Vec<Result<_, Error>> = walk_files(sources_path)?
         .try_fold(Vec::new, |mut paragraphs, entry| {
             let source = DocumentSource::new(entry.path());
 
@@ -650,6 +655,25 @@ $"#,
                 "\
 USAGE:
     hyperlink [FLAGS] [OPTIONS] [base-path] [SUBCOMMAND]\
+",
+            ));
+    }
+
+    #[test]
+    fn test_bad_dir() {
+        let mut cmd = Command::cargo_bin("hyperlink").unwrap();
+        cmd.arg("non_existing_dir");
+
+        cmd.assert()
+            .failure()
+            .code(1)
+            .stdout("Reading files\n")
+            .stderr(predicate::str::contains(
+                "\
+Error: IO error for operation on non_existing_dir: No such file or directory (os error 2)
+
+Caused by:
+    No such file or directory (os error 2)
 ",
             ));
     }
