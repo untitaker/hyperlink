@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt;
 use std::fs;
 use std::io::{BufReader, Read};
@@ -8,6 +9,7 @@ use std::sync::Arc;
 use anyhow::Error;
 use bumpalo::collections::vec::Vec as BumpVec;
 use bumpalo::collections::String as BumpString;
+use quick_xml::events::attributes::Attribute;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
@@ -124,6 +126,11 @@ mod test_push_and_canonicalize {
         push_and_canonicalize(&mut base, path);
         assert_eq!(base, "foo/index.html/baz.html");
     }
+}
+
+#[inline]
+fn try_unescape_attribute_value<'a>(attr: &'a Attribute<'_>) -> Cow<'a, [u8]> {
+    attr.unescaped_value().unwrap_or(Cow::Borrowed(&attr.value))
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -306,17 +313,21 @@ impl Document {
                             for attr in e.html_attributes().with_checks(false) {
                                 let attr = attr?;
 
-                                if attr.key == $attr_name && !is_bad_schema(&attr.value) {
-                                    sink.push(Link::Uses(UsedLink {
-                                        href: self.join(
-                                            arena,
-                                            check_anchors,
-                                            str::from_utf8(&attr.value)?,
-                                        ),
-                                        path: self.path.clone(),
-                                        paragraph: None,
-                                    }));
+                                if attr.key != $attr_name {
+                                    continue;
                                 }
+
+                                let value = try_unescape_attribute_value(&attr);
+
+                                if is_bad_schema(&value) {
+                                    continue;
+                                }
+
+                                sink.push(Link::Uses(UsedLink {
+                                    href: self.join(arena, check_anchors, str::from_utf8(&value)?),
+                                    path: self.path.clone(),
+                                    paragraph: None,
+                                }));
                             }
                         };
                     }
@@ -329,8 +340,11 @@ impl Document {
 
                                     if attr.key == $attr_name {
                                         let mut href = BumpString::new_in(arena);
+
+                                        let value = try_unescape_attribute_value(&attr);
+
                                         href.push('#');
-                                        href.push_str(str::from_utf8(&attr.value)?);
+                                        href.push_str(str::from_utf8(&value)?);
 
                                         sink.push(Link::Defines(DefinedLink {
                                             href: self.join(arena, check_anchors, &href),
@@ -431,6 +445,10 @@ fn test_document_links() {
 
     <a href=../../rust/>
     <a href='../../go/?foo=bar&bar=baz' href='../../go/'>
+    <a href="&#109;&#97;" />
+
+    <!-- obfuscated mailto: link -->
+    <a href='&#109;&#97;&#105;&#108;&#116;&#111;&#58;&#102;&#111;&#111;&#64;&#101;&#120;&#97;&#109;&#112;&#108;&#101;&#46;&#99;&#111;&#109;' />
     """#
         .as_bytes(),
         false,
@@ -454,6 +472,7 @@ fn test_document_links() {
             used_link("platforms/rust"),
             used_link("platforms/go"),
             used_link("platforms/go"),
+            used_link("platforms/python/troubleshooting/ma"),
         ]
     );
 }
