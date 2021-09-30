@@ -669,7 +669,7 @@ USAGE:
             .code(1)
             .stdout("Reading files\n")
             .stderr(predicate::str::contains(
-                "Error: IO error for operation on non_existing_dir:"
+                "Error: IO error for operation on non_existing_dir:",
             ));
     }
 }
