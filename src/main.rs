@@ -669,12 +669,7 @@ USAGE:
             .code(1)
             .stdout("Reading files\n")
             .stderr(predicate::str::contains(
-                "\
-Error: IO error for operation on non_existing_dir: No such file or directory (os error 2)
-
-Caused by:
-    No such file or directory (os error 2)
-",
+                "Error: IO error for operation on non_existing_dir:"
             ));
     }
 }
