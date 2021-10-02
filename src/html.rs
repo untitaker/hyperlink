@@ -181,6 +181,23 @@ impl<'a, P> Link<'a, P> {
     }
 }
 
+/// This struct is initialized once per "batch of documents" that will be processed on a single
+/// worker thread (as determined by rayon). It pays off to do as much heap allocation as possible
+/// here once instead of in Document::links.
+#[derive(Default)]
+pub struct DocumentBuffers {
+    arena: bumpalo::Bump,
+    // quick-xml requires a std vec
+    xml_buf: Vec<u8>,
+}
+
+impl DocumentBuffers {
+    pub fn reset(&mut self) {
+        self.arena.reset();
+        self.xml_buf.clear();
+    }
+}
+
 pub struct Document {
     pub path: Arc<PathBuf>,
     href: String,
@@ -257,19 +274,15 @@ impl Document {
 
     pub fn links<'b, 'l, P: ParagraphWalker>(
         &self,
-        arena: &'b bumpalo::Bump,
-        xml_buf: &mut Vec<u8>,
-        sink: &mut BumpVec<'b, Link<'l, P::Paragraph>>,
+        doc_buf: &'b mut DocumentBuffers,
         check_anchors: bool,
         get_paragraphs: bool,
-    ) -> Result<(), Error>
+    ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
     where
         'b: 'l,
     {
         self.links_from_read::<_, P>(
-            arena,
-            xml_buf,
-            sink,
+            doc_buf,
             fs::File::open(&*self.path)?,
             check_anchors,
             get_paragraphs,
@@ -278,13 +291,11 @@ impl Document {
 
     fn links_from_read<'b, 'l, R: Read, P: ParagraphWalker>(
         &self,
-        arena: &'b bumpalo::Bump,
-        xml_buf: &mut Vec<u8>,
-        sink: &mut BumpVec<'b, Link<'l, P::Paragraph>>,
+        doc_buf: &'b mut DocumentBuffers,
         read: R,
         check_anchors: bool,
         get_paragraphs: bool,
-    ) -> Result<(), Error>
+    ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
     where
         'b: 'l,
     {
@@ -294,17 +305,17 @@ impl Document {
         reader.check_end_names(false);
 
         let mut paragraph_walker = P::new();
-
-        let mut last_paragraph_i = sink.len();
+        let mut link_buf = BumpVec::new_in(&doc_buf.arena);
+        let mut last_paragraph_i = 0;
         let mut in_paragraph = false;
 
         loop {
-            match reader.read_event(xml_buf)? {
+            match reader.read_event(&mut doc_buf.xml_buf)? {
                 Event::Eof => break,
                 Event::Start(ref e) => {
                     if is_paragraph_tag(e.name()) {
                         in_paragraph = true;
-                        last_paragraph_i = sink.len();
+                        last_paragraph_i = link_buf.len();
                         paragraph_walker.finish_paragraph();
                     }
 
@@ -323,8 +334,12 @@ impl Document {
                                     continue;
                                 }
 
-                                sink.push(Link::Uses(UsedLink {
-                                    href: self.join(arena, check_anchors, str::from_utf8(&value)?),
+                                link_buf.push(Link::Uses(UsedLink {
+                                    href: self.join(
+                                        &doc_buf.arena,
+                                        check_anchors,
+                                        str::from_utf8(&value)?,
+                                    ),
                                     path: self.path.clone(),
                                     paragraph: None,
                                 }));
@@ -339,15 +354,15 @@ impl Document {
                                     let attr = attr?;
 
                                     if attr.key == $attr_name {
-                                        let mut href = BumpString::new_in(arena);
+                                        let mut href = BumpString::new_in(&doc_buf.arena);
 
                                         let value = try_unescape_attribute_value(&attr);
 
                                         href.push('#');
                                         href.push_str(str::from_utf8(&value)?);
 
-                                        sink.push(Link::Defines(DefinedLink {
-                                            href: self.join(arena, check_anchors, &href),
+                                        link_buf.push(Link::Defines(DefinedLink {
+                                            href: self.join(&doc_buf.arena, check_anchors, &href),
                                         }));
                                     }
                                 }
@@ -375,7 +390,7 @@ impl Document {
                     if is_paragraph_tag(e.name()) {
                         let paragraph = paragraph_walker.finish_paragraph();
                         if in_paragraph {
-                            for link in &mut sink[last_paragraph_i..] {
+                            for link in &mut link_buf[last_paragraph_i..] {
                                 match link {
                                     Link::Uses(ref mut x) => {
                                         x.paragraph = paragraph.clone();
@@ -385,7 +400,7 @@ impl Document {
                             }
                             in_paragraph = false;
                         }
-                        last_paragraph_i = sink.len();
+                        last_paragraph_i = link_buf.len();
                     }
                 }
                 Event::Text(e) if get_paragraphs && in_paragraph => {
@@ -396,7 +411,7 @@ impl Document {
             }
         }
 
-        Ok(())
+        Ok(link_buf.into_iter())
     }
 }
 
@@ -424,19 +439,15 @@ fn test_document_href() {
 fn test_document_links() {
     use crate::paragraph::ParagraphHasher;
 
-    let arena = bumpalo::Bump::new();
-
     let doc = Document::new(
         Path::new("public/"),
         Path::new("public/platforms/python/troubleshooting/index.html"),
     );
 
-    let mut links = BumpVec::new_in(&arena);
+    let mut doc_buf = DocumentBuffers::default();
 
-    doc.links_from_read::<_, ParagraphHasher>(
-        &arena,
-        &mut Vec::new(),
-        &mut links,
+    let links = doc.links_from_read::<_, ParagraphHasher>(
+        &mut doc_buf,
         r#"""
         <!doctype html>
         &nbsp;
@@ -465,7 +476,7 @@ fn test_document_links() {
     };
 
     assert_eq!(
-        &links,
+        &links.collect::<Vec<_>>(),
         &[
             used_link("platforms/ruby"),
             used_link("platforms/perl"),

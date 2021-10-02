@@ -9,14 +9,13 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use anyhow::{anyhow, Context, Error};
-use bumpalo::collections::vec::Vec as BumpVec;
 use jwalk::WalkDir;
 use markdown::DocumentSource;
 use rayon::prelude::*;
 use structopt::StructOpt;
 
 use collector::{BrokenLinkCollector, LinkCollector, UsedLinkCollector};
-use html::{DefinedLink, Document, Link};
+use html::{DefinedLink, Document, DocumentBuffers, Link};
 use paragraph::{DebugParagraphWalker, NoopParagraphWalker, ParagraphHasher, ParagraphWalker};
 
 static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
@@ -307,12 +306,12 @@ fn print_github_actions_href_list(
 }
 
 fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
-    let arena = bumpalo::Bump::new();
-
     let extension = match path.extension() {
         Some(x) => x,
         None => return Err(anyhow!("File has no extension, cannot determine type")),
     };
+
+    let mut doc_buf = DocumentBuffers::default();
 
     let paragraphs: BTreeSet<_> = match extension.to_str() {
         Some(x) if MARKDOWN_FILES.contains(&x) => {
@@ -325,16 +324,8 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
         }
         Some(x) if HTML_FILES.contains(&x) => {
             let document = Document::new(Path::new(""), &path);
-            let mut links = BumpVec::new_in(&arena);
-            document.links::<DebugParagraphWalker<ParagraphHasher>>(
-                &arena,
-                &mut Vec::new(),
-                &mut links,
-                false,
-                true,
-            )?;
-            links
-                .into_iter()
+            document
+                .links::<DebugParagraphWalker<ParagraphHasher>>(&mut doc_buf, false, true)?
                 .filter_map(|link| Some((link.into_paragraph()?, None)))
                 .collect()
         }
@@ -416,11 +407,8 @@ fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
 ) -> Result<HtmlResult<C>, Error> {
     let result: Result<_, Error> = walk_files(base_path)?
         .try_fold(
-            // apparently can't use arena allocations here because that would make values !Send
-            // also because quick-xml specifically wants std vec
-            || (bumpalo::Bump::new(), Vec::new(), C::new(), 0, 0),
-            |(mut arena, mut xml_buf, mut collector, mut documents_count, mut file_count),
-             entry| {
+            || (DocumentBuffers::default(), C::new(), 0, 0),
+            |(mut doc_buf, mut collector, mut documents_count, mut file_count), entry| {
                 let path = entry.path();
                 let document = Document::new(base_path, &path);
 
@@ -435,35 +423,25 @@ fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
                     .and_then(|extension| Some(HTML_FILES.contains(&extension.to_str()?)))
                     .unwrap_or(false)
                 {
-                    return Ok((arena, xml_buf, collector, documents_count, file_count));
+                    return Ok((doc_buf, collector, documents_count, file_count));
                 }
 
-                let mut link_buf = BumpVec::new_in(&arena);
-                document
-                    .links::<P>(
-                        &arena,
-                        &mut xml_buf,
-                        &mut link_buf,
-                        check_anchors,
-                        get_paragraphs,
-                    )
-                    .with_context(|| format!("Failed to read file {}", document.path.display()))?;
-
-                xml_buf.clear();
-
-                for link in link_buf {
+                for link in document
+                    .links::<P>(&mut doc_buf, check_anchors, get_paragraphs)
+                    .with_context(|| format!("Failed to read file {}", document.path.display()))?
+                {
                     collector.ingest(link);
                 }
 
-                arena.reset();
+                doc_buf.reset();
 
                 documents_count += 1;
 
-                Ok((arena, xml_buf, collector, documents_count, file_count))
+                Ok((doc_buf, collector, documents_count, file_count))
             },
         )
         .map(|result| {
-            result.map(|(_, _, collector, documents_count, file_count)| {
+            result.map(|(_, collector, documents_count, file_count)| {
                 (collector, documents_count, file_count)
             })
         })
