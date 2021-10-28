@@ -15,7 +15,7 @@ blake3 = "1.0.0"
 
 quick-xml = "0.22.0"
 jwalk = "0.6.0"
-patricia_tree = "0.3.0"
+patricia_tree = "0.3.1"
 bumpalo = { version = "3.7.0", features = ["collections"] }
 
 [dev-dependencies]
