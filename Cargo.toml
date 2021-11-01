@@ -11,7 +11,7 @@ structopt = "0.3.23"
 anyhow = "1.0.40"
 rayon = "1.5.1"
 pulldown-cmark = "0.8.0"
-blake3 = "1.0.0"
+blake3 = "1.1.0"
 
 quick-xml = "0.22.0"
 jwalk = "0.6.0"
