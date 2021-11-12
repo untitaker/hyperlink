@@ -17,6 +17,7 @@ quick-xml = "0.22.0"
 jwalk = "0.6.0"
 patricia_tree = "0.3.1"
 bumpalo = { version = "3.8.0", features = ["collections"] }
+percent-encoding = "2.1.0"
 
 [dev-dependencies]
 assert_cmd = "2.0.2"

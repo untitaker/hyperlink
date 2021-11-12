@@ -129,6 +129,13 @@ mod test_push_and_canonicalize {
 }
 
 #[inline]
+fn try_percent_decode(input: &str) -> Cow<'_, str> {
+    percent_encoding::percent_decode_str(input)
+        .decode_utf8()
+        .unwrap_or(Cow::Borrowed(input))
+}
+
+#[inline]
 fn try_unescape_attribute_value<'a>(attr: &'a Attribute<'_>) -> Cow<'a, [u8]> {
     attr.unescaped_value().unwrap_or(Cow::Borrowed(&attr.value))
 }
@@ -220,6 +227,7 @@ impl Document {
             .to_str()
             .expect("Invalid unicode in path")
             .to_owned();
+
         if cfg!(windows) {
             unsafe {
                 // safety: we replace ascii bytes only
@@ -260,7 +268,7 @@ impl Document {
             href.push('/');
         }
 
-        push_and_canonicalize(&mut href, &rel_href[..qs_start]);
+        push_and_canonicalize(&mut href, &try_percent_decode(&rel_href[..qs_start]));
 
         if preserve_anchor {
             let anchor = &rel_href[anchor_start..];
@@ -458,6 +466,10 @@ fn test_document_links() {
     <a href='../../go/?foo=bar&bar=baz' href='../../go/'>
     <a href="&#109;&#97;" />
 
+    <!-- test url encoding within HTML + percent-encoding within html encoding -->
+    <a href="%5Bslug%5D.js" />
+    <a href="&#37;5Bschlug%5D.js" />
+
     <!-- obfuscated mailto: link -->
     <a href='&#109;&#97;&#105;&#108;&#116;&#111;&#58;&#102;&#111;&#111;&#64;&#101;&#120;&#97;&#109;&#112;&#108;&#101;&#46;&#99;&#111;&#109;' />
     """#
@@ -484,6 +496,8 @@ fn test_document_links() {
             used_link("platforms/go"),
             used_link("platforms/go"),
             used_link("platforms/python/troubleshooting/ma"),
+            used_link("platforms/python/troubleshooting/[slug].js"),
+            used_link("platforms/python/troubleshooting/[schlug].js"),
         ]
     );
 }
