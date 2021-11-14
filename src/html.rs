@@ -435,9 +435,9 @@ impl Document {
                         extract_used_link_srcset!(b"srcSet");
                     } else if e.name().eq_ignore_ascii_case(b"link") {
                         extract_used_link!(b"href");
-                    } else if e.name().eq_ignore_ascii_case(b"script") {
-                        extract_used_link!(b"src");
-                    } else if e.name().eq_ignore_ascii_case(b"iframe") {
+                    } else if e.name().eq_ignore_ascii_case(b"script")
+                        || e.name().eq_ignore_ascii_case(b"iframe")
+                    {
                         extract_used_link!(b"src");
                     } else if e.name().eq_ignore_ascii_case(b"area") {
                         extract_used_link!(b"href");
