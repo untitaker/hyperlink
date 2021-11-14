@@ -131,6 +131,9 @@ links. However, it can do more.
 * [liche](https://github.com/raviqqe/liche) seems to be closest in performance
   to `hyperlink`.
 
+* [lychee](https://github.com/lycheeverse/lychee) can do filesystem traversal,
+  but generally overlaps with hyperlink's usecases only a little.
+
 ## License
 
 Licensed under the MIT, see [`./LICENSE`](./LICENSE).
