@@ -332,7 +332,7 @@ impl Document {
                             for attr in e.html_attributes().with_checks(false) {
                                 let attr = attr?;
 
-                                if attr.key != $attr_name {
+                                if !attr.key.eq_ignore_ascii_case($attr_name) {
                                     continue;
                                 }
 
@@ -355,13 +355,46 @@ impl Document {
                         };
                     }
 
+                    macro_rules! extract_used_link_srcset {
+                        ($attr_name:expr) => {
+                            for attr in e.html_attributes().with_checks(false) {
+                                let attr = attr?;
+
+                                if !attr.key.eq_ignore_ascii_case($attr_name) {
+                                    continue;
+                                }
+
+                                let values = try_unescape_attribute_value(&attr);
+
+                                // https://html.spec.whatwg.org/multipage/images.html#srcset-attribute
+                                for value in values.split(|&c| c == b',')
+                                    .filter_map(|image_candidate_string| image_candidate_string.split(|&c| c == b' ').filter(|value| !value.is_empty()).next())
+                                    .filter(|value| !value.is_empty()) {
+                                    if is_bad_schema(&value) {
+                                        continue;
+                                    }
+
+                                    link_buf.push(Link::Uses(UsedLink {
+                                        href: self.join(
+                                            &doc_buf.arena,
+                                            check_anchors,
+                                            str::from_utf8(&value)?,
+                                        ),
+                                        path: self.path.clone(),
+                                        paragraph: None,
+                                    }));
+                                }
+                            }
+                        }
+                    }
+
                     macro_rules! extract_anchor_def {
                         ($attr_name:expr) => {
                             if check_anchors {
                                 for attr in e.html_attributes().with_checks(false) {
                                     let attr = attr?;
 
-                                    if attr.key == $attr_name {
+                                    if attr.key.eq_ignore_ascii_case($attr_name) {
                                         let mut href = BumpString::new_in(&doc_buf.arena);
 
                                         let value = try_unescape_attribute_value(&attr);
@@ -378,18 +411,38 @@ impl Document {
                         };
                     }
 
-                    match e.name() {
-                        b"a" => {
-                            extract_used_link!(b"href");
-                            extract_anchor_def!(b"name");
-                        }
-                        b"img" => extract_used_link!(b"src"),
-                        b"link" => extract_used_link!(b"href"),
-                        b"script" => extract_used_link!(b"src"),
-                        b"iframe" => extract_used_link!(b"src"),
-                        b"area" => extract_used_link!(b"href"),
-                        b"object" => extract_used_link!(b"data"),
-                        _ => {}
+                    // XXX: Those macros are not a great way to organize code units. If you're
+                    // considering refactoring them, don't bother with closures.
+                    //
+                    // * Rust will complain that the closures all borrow link_buf mutably which
+                    //   makes it impossible to access immutably outside of the closure.
+                    // * Rust will complain that the closures may outlive the current function.
+                    //
+                    // In theory, when Rust generates the struct for the closure to capture local
+                    // variable state, that struct would have to be self-referential.
+                    //
+                    // In the end you're forced to pass almost all arguments with lifetime
+                    // constraints explicitly, so you might as well use a function on `self`.
+                    //
+                    // There's also a performance optimization left on the table because we iterate
+                    // through the element's attributes multiple times, once per macro call.
+
+                    if e.name().eq_ignore_ascii_case(b"a") {
+                        extract_used_link!(b"href");
+                        extract_anchor_def!(b"name");
+                    } else if e.name().eq_ignore_ascii_case(b"img") {
+                        extract_used_link!(b"src");
+                        extract_used_link_srcset!(b"srcSet");
+                    } else if e.name().eq_ignore_ascii_case(b"link") {
+                        extract_used_link!(b"href");
+                    } else if e.name().eq_ignore_ascii_case(b"script") {
+                        extract_used_link!(b"src");
+                    } else if e.name().eq_ignore_ascii_case(b"iframe") {
+                        extract_used_link!(b"src");
+                    } else if e.name().eq_ignore_ascii_case(b"area") {
+                        extract_used_link!(b"href");
+                    } else if e.name().eq_ignore_ascii_case(b"object") {
+                        extract_used_link!(b"data");
                     }
 
                     extract_anchor_def!(b"id");
@@ -472,6 +525,9 @@ fn test_document_links() {
 
     <!-- obfuscated mailto: link -->
     <a href='&#109;&#97;&#105;&#108;&#116;&#111;&#58;&#102;&#111;&#111;&#64;&#101;&#120;&#97;&#109;&#112;&#108;&#101;&#46;&#99;&#111;&#109;' />
+
+    <!-- case sensitivity -->
+    <A HREF='case' />
     """#
         .as_bytes(),
         false,
@@ -498,6 +554,7 @@ fn test_document_links() {
             used_link("platforms/python/troubleshooting/ma"),
             used_link("platforms/python/troubleshooting/[slug].js"),
             used_link("platforms/python/troubleshooting/[schlug].js"),
+            used_link("platforms/python/troubleshooting/case"),
         ]
     );
 }
