@@ -164,8 +164,20 @@ fn try_percent_decode(input: &str) -> Cow<'_, str> {
 }
 
 #[inline]
+pub fn trim_ascii_whitespace(x: Cow<'_, [u8]>) -> Cow<'_, [u8]> {
+    let from = match x.iter().position(|x| !x.is_ascii_whitespace()) {
+        Some(i) => i,
+        None => return x,
+    };
+    let to = x.iter().rposition(|x| !x.is_ascii_whitespace()).unwrap();
+    Cow::Owned(x[from..=to].to_owned())
+}
+
+#[inline]
 fn try_unescape_attribute_value<'a>(attr: &'a Attribute<'_>) -> Cow<'a, [u8]> {
-    attr.unescaped_value().unwrap_or(Cow::Borrowed(&attr.value))
+    // decode html and trim ascii whitespace
+    // XXX: this is only necessary because quick-xml is not a proper html parser
+    trim_ascii_whitespace(attr.unescaped_value().unwrap_or(Cow::Borrowed(&attr.value)))
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -556,6 +568,10 @@ fn test_document_links() {
 
     <!-- case sensitivity -->
     <A HREF='case' />
+    <A HREF='HTTP://googel.com' />
+
+    <!-- whitespace, this is how browsers really do behave -->
+    <a href=' whitespace ' />
     """#
         .as_bytes(),
         false,
@@ -583,6 +599,7 @@ fn test_document_links() {
             used_link("platforms/python/troubleshooting/[slug].js"),
             used_link("platforms/python/troubleshooting/[schlug].js"),
             used_link("platforms/python/troubleshooting/case"),
+            used_link("platforms/python/troubleshooting/whitespace"),
         ]
     );
 }
