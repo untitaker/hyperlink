@@ -15,6 +15,9 @@ use quick_xml::Reader;
 
 use crate::paragraph::ParagraphWalker;
 
+#[cfg(test)]
+use pretty_assertions::assert_eq;
+
 #[inline]
 fn is_paragraph_tag(tag: &[u8]) -> bool {
     tag == b"p" || tag == b"li" || tag == b"dt" || tag == b"dd"
@@ -22,14 +25,38 @@ fn is_paragraph_tag(tag: &[u8]) -> bool {
 
 #[inline]
 fn is_bad_schema(url: &[u8]) -> bool {
-    url.starts_with(b"http:")
-        || url.starts_with(b"https:")
-        || url.starts_with(b"irc:")
-        || url.starts_with(b"ftp:")
-        || url.starts_with(b"mailto:")
-        || url.starts_with(b"data:")
-        || url.starts_with(b"//")
-        || url.starts_with(b"javascript:")
+    // check if url is empty
+    let first_char = match url.first() {
+        Some(x) => x,
+        None => return false,
+    };
+
+    // protocol-relative URL
+    if url.starts_with(b"//") {
+        return true;
+    }
+
+    // check if string before first : is a valid URL scheme
+    // see RFC 2396, Appendix A for what constitutes a valid scheme
+
+    if !matches!(first_char, b'a'..=b'z' | b'A'..=b'Z') {
+        return false;
+    }
+
+    for c in &url[1..] {
+        match c {
+            b'a'..=b'z' => (),
+            b'A'..=b'Z' => (),
+            b'0'..=b'9' => (),
+            b'+' => (),
+            b'-' => (),
+            b'.' => (),
+            b':' => return true,
+            _ => return false,
+        }
+    }
+
+    false
 }
 
 #[inline]
