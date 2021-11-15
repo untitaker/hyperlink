@@ -22,10 +22,10 @@ fn is_paragraph_tag(tag: &[u8]) -> bool {
 
 #[inline]
 fn is_bad_schema(url: &[u8]) -> bool {
-    url.starts_with(b"http://")
-        || url.starts_with(b"https://")
-        || url.starts_with(b"irc://")
-        || url.starts_with(b"ftp://")
+    url.starts_with(b"http:")
+        || url.starts_with(b"https:")
+        || url.starts_with(b"irc:")
+        || url.starts_with(b"ftp:")
         || url.starts_with(b"mailto:")
         || url.starts_with(b"data:")
         || url.starts_with(b"//")
