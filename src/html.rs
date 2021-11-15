@@ -29,6 +29,7 @@ fn is_bad_schema(url: &[u8]) -> bool {
         || url.starts_with(b"mailto:")
         || url.starts_with(b"data:")
         || url.starts_with(b"//")
+        || url.starts_with(b"javascript:")
 }
 
 #[inline]
