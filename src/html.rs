@@ -650,3 +650,13 @@ fn test_document_join_bare_html() {
         Href("platforms/ruby#foo".into())
     );
 }
+
+#[test]
+fn test_is_bad_schema() {
+    assert!(is_bad_schema(b"//"));
+    assert!(!is_bad_schema(b""));
+    assert!(!is_bad_schema(b"http"));
+    assert!(is_bad_schema(b"http:"));
+    assert!(is_bad_schema(b"http:/"));
+    assert!(!is_bad_schema(b"http/"));
+}
