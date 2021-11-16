@@ -408,7 +408,7 @@ impl Document {
 
                                 // https://html.spec.whatwg.org/multipage/images.html#srcset-attribute
                                 for value in values.split(|&c| c == b',')
-                                    .filter_map(|image_candidate_string| image_candidate_string.split(|&c| c == b' ').filter(|value| !value.is_empty()).next())
+                                    .filter_map(|image_candidate_string| image_candidate_string.split(|&c| c.is_ascii_whitespace()).filter(|value| !value.is_empty()).next())
                                     .filter(|value| !value.is_empty()) {
                                     if is_bad_schema(&value) {
                                         continue;
@@ -572,6 +572,14 @@ fn test_document_links() {
 
     <!-- whitespace, this is how browsers really do behave -->
     <a href=' whitespace ' />
+
+    <img
+        src="/static/image.png"
+        srcset="
+        /static/image300.png  300w,
+        /static/image600.png  600w,
+        "
+    />
     """#
         .as_bytes(),
         false,
@@ -600,6 +608,9 @@ fn test_document_links() {
             used_link("platforms/python/troubleshooting/[schlug].js"),
             used_link("platforms/python/troubleshooting/case"),
             used_link("platforms/python/troubleshooting/whitespace"),
+            used_link("static/image.png"),
+            used_link("static/image300.png"),
+            used_link("static/image600.png"),
         ]
     );
 }
