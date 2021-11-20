@@ -18,6 +18,7 @@ git tag $new_version
 
 git show HEAD
 
-echo "now push:"
+echo "things left to do:"
 echo "  git push"
 echo "  git push origin $new_version"
+echo "  uncheck and check 'Publish to Marketplace' property of the new release, such that version gets bumped."
