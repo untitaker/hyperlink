@@ -21,4 +21,5 @@ git show HEAD
 echo "things left to do:"
 echo "  git push"
 echo "  git push origin $new_version"
-echo "  uncheck and check 'Publish to Marketplace' property of the new release, such that version gets bumped."
+echo "  uncheck and check 'Publish to Marketplace' property of the new release"
+echo "    see https://github.com/github/feedback/discussions/7941"
