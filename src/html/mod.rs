@@ -1,63 +1,22 @@
+mod parser;
+
 use std::borrow::Cow;
 use std::fmt;
 use std::fs;
-use std::io::{BufReader, Read};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::Arc;
 
 use anyhow::Error;
-use bumpalo::collections::vec::Vec as BumpVec;
 use bumpalo::collections::String as BumpString;
-use quick_xml::events::attributes::Attribute;
-use quick_xml::events::Event;
-use quick_xml::Reader;
+use bumpalo::collections::Vec as BumpVec;
+use html5gum::Tokenizer;
 
 use crate::paragraph::ParagraphWalker;
 
 #[cfg(test)]
 use pretty_assertions::assert_eq;
-
-#[inline]
-fn is_paragraph_tag(tag: &[u8]) -> bool {
-    tag == b"p" || tag == b"li" || tag == b"dt" || tag == b"dd"
-}
-
-#[inline]
-fn is_bad_schema(url: &[u8]) -> bool {
-    // check if url is empty
-    let first_char = match url.first() {
-        Some(x) => x,
-        None => return false,
-    };
-
-    // protocol-relative URL
-    if url.starts_with(b"//") {
-        return true;
-    }
-
-    // check if string before first : is a valid URL scheme
-    // see RFC 2396, Appendix A for what constitutes a valid scheme
-
-    if !matches!(first_char, b'a'..=b'z' | b'A'..=b'Z') {
-        return false;
-    }
-
-    for c in &url[1..] {
-        match c {
-            b'a'..=b'z' => (),
-            b'A'..=b'Z' => (),
-            b'0'..=b'9' => (),
-            b'+' => (),
-            b'-' => (),
-            b'.' => (),
-            b':' => return true,
-            _ => return false,
-        }
-    }
-
-    false
-}
 
 #[inline]
 fn push_and_canonicalize(base: &mut BumpString, path: &str) {
@@ -163,23 +122,6 @@ fn try_percent_decode(input: &str) -> Cow<'_, str> {
         .unwrap_or(Cow::Borrowed(input))
 }
 
-#[inline]
-pub fn trim_ascii_whitespace(x: Cow<'_, [u8]>) -> Cow<'_, [u8]> {
-    let from = match x.iter().position(|x| !x.is_ascii_whitespace()) {
-        Some(i) => i,
-        None => return x,
-    };
-    let to = x.iter().rposition(|x| !x.is_ascii_whitespace()).unwrap();
-    Cow::Owned(x[from..=to].to_owned())
-}
-
-#[inline]
-fn try_unescape_attribute_value<'a>(attr: &'a Attribute<'_>) -> Cow<'a, [u8]> {
-    // decode html and trim ascii whitespace
-    // XXX: this is only necessary because quick-xml is not a proper html parser
-    trim_ascii_whitespace(attr.unescaped_value().unwrap_or(Cow::Borrowed(&attr.value)))
-}
-
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Href<'a>(pub &'a str);
 
@@ -234,14 +176,15 @@ impl<'a, P> Link<'a, P> {
 #[derive(Default)]
 pub struct DocumentBuffers {
     arena: bumpalo::Bump,
-    // quick-xml requires a std vec
-    xml_buf: Vec<u8>,
+    read_buf: String,
+    parser_buffers: parser::ParserBuffers,
 }
 
 impl DocumentBuffers {
     pub fn reset(&mut self) {
         self.arena.reset();
-        self.xml_buf.clear();
+        self.read_buf.clear();
+        self.parser_buffers.reset();
     }
 }
 
@@ -340,176 +283,31 @@ impl Document {
     fn links_from_read<'b, 'l, R: Read, P: ParagraphWalker>(
         &self,
         doc_buf: &'b mut DocumentBuffers,
-        read: R,
+        mut read: R,
         check_anchors: bool,
         get_paragraphs: bool,
     ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
     where
         'b: 'l,
     {
-        let mut reader = Reader::from_reader(BufReader::new(read));
-        reader.trim_text(true);
-        reader.expand_empty_elements(true);
-        reader.check_end_names(false);
-
-        let mut paragraph_walker = P::new();
+        read.read_to_string(&mut doc_buf.read_buf)?;
         let mut link_buf = BumpVec::new_in(&doc_buf.arena);
-        let mut last_paragraph_i = 0;
-        let mut in_paragraph = false;
 
-        loop {
-            match reader.read_event(&mut doc_buf.xml_buf)? {
-                Event::Eof => break,
-                Event::Start(ref e) => {
-                    if is_paragraph_tag(e.name()) {
-                        in_paragraph = true;
-                        last_paragraph_i = link_buf.len();
-                        paragraph_walker.finish_paragraph();
-                    }
-
-                    macro_rules! extract_used_link {
-                        ($attr_name:expr) => {
-                            for attr in e.html_attributes().with_checks(false) {
-                                let attr = attr?;
-
-                                if !attr.key.eq_ignore_ascii_case($attr_name) {
-                                    continue;
-                                }
-
-                                let value = try_unescape_attribute_value(&attr);
-
-                                if is_bad_schema(&value) {
-                                    continue;
-                                }
-
-                                link_buf.push(Link::Uses(UsedLink {
-                                    href: self.join(
-                                        &doc_buf.arena,
-                                        check_anchors,
-                                        str::from_utf8(&value)?,
-                                    ),
-                                    path: self.path.clone(),
-                                    paragraph: None,
-                                }));
-                            }
-                        };
-                    }
-
-                    macro_rules! extract_used_link_srcset {
-                        ($attr_name:expr) => {
-                            for attr in e.html_attributes().with_checks(false) {
-                                let attr = attr?;
-
-                                if !attr.key.eq_ignore_ascii_case($attr_name) {
-                                    continue;
-                                }
-
-                                let values = try_unescape_attribute_value(&attr);
-
-                                // https://html.spec.whatwg.org/multipage/images.html#srcset-attribute
-                                for value in values.split(|&c| c == b',')
-                                    .filter_map(|image_candidate_string| image_candidate_string.split(|&c| c.is_ascii_whitespace()).filter(|value| !value.is_empty()).next())
-                                    .filter(|value| !value.is_empty()) {
-                                    if is_bad_schema(&value) {
-                                        continue;
-                                    }
-
-                                    link_buf.push(Link::Uses(UsedLink {
-                                        href: self.join(
-                                            &doc_buf.arena,
-                                            check_anchors,
-                                            str::from_utf8(&value)?,
-                                        ),
-                                        path: self.path.clone(),
-                                        paragraph: None,
-                                    }));
-                                }
-                            }
-                        }
-                    }
-
-                    macro_rules! extract_anchor_def {
-                        ($attr_name:expr) => {
-                            if check_anchors {
-                                for attr in e.html_attributes().with_checks(false) {
-                                    let attr = attr?;
-
-                                    if attr.key.eq_ignore_ascii_case($attr_name) {
-                                        let mut href = BumpString::new_in(&doc_buf.arena);
-
-                                        let value = try_unescape_attribute_value(&attr);
-
-                                        href.push('#');
-                                        href.push_str(str::from_utf8(&value)?);
-
-                                        link_buf.push(Link::Defines(DefinedLink {
-                                            href: self.join(&doc_buf.arena, check_anchors, &href),
-                                        }));
-                                    }
-                                }
-                            }
-                        };
-                    }
-
-                    // XXX: Those macros are not a great way to organize code units. If you're
-                    // considering refactoring them, don't bother with closures.
-                    //
-                    // * Rust will complain that the closures all borrow link_buf mutably which
-                    //   makes it impossible to access immutably outside of the closure.
-                    // * Rust will complain that the closures may outlive the current function.
-                    //
-                    // In theory, when Rust generates the struct for the closure to capture local
-                    // variable state, that struct would have to be self-referential.
-                    //
-                    // In the end you're forced to pass almost all arguments with lifetime
-                    // constraints explicitly, so you might as well use a function on `self`.
-                    //
-                    // There's also a performance optimization left on the table because we iterate
-                    // through the element's attributes multiple times, once per macro call.
-
-                    if e.name().eq_ignore_ascii_case(b"a") {
-                        extract_used_link!(b"href");
-                        extract_anchor_def!(b"name");
-                    } else if e.name().eq_ignore_ascii_case(b"img") {
-                        extract_used_link!(b"src");
-                        extract_used_link_srcset!(b"srcSet");
-                    } else if e.name().eq_ignore_ascii_case(b"link") {
-                        extract_used_link!(b"href");
-                    } else if e.name().eq_ignore_ascii_case(b"script")
-                        || e.name().eq_ignore_ascii_case(b"iframe")
-                    {
-                        extract_used_link!(b"src");
-                    } else if e.name().eq_ignore_ascii_case(b"area") {
-                        extract_used_link!(b"href");
-                    } else if e.name().eq_ignore_ascii_case(b"object") {
-                        extract_used_link!(b"data");
-                    }
-
-                    extract_anchor_def!(b"id");
-                }
-                Event::End(e) if get_paragraphs => {
-                    if is_paragraph_tag(e.name()) {
-                        let paragraph = paragraph_walker.finish_paragraph();
-                        if in_paragraph {
-                            for link in &mut link_buf[last_paragraph_i..] {
-                                match link {
-                                    Link::Uses(ref mut x) => {
-                                        x.paragraph = paragraph.clone();
-                                    }
-                                    Link::Defines(_) => {}
-                                }
-                            }
-                            in_paragraph = false;
-                        }
-                        last_paragraph_i = link_buf.len();
-                    }
-                }
-                Event::Text(e) if get_paragraphs && in_paragraph => {
-                    let text = e.unescaped().unwrap_or_else(|_| e.escaped().into());
-                    paragraph_walker.update(&text);
-                }
-                _ => {}
-            }
+        {
+            let emitter = parser::HyperlinkEmitter {
+                paragraph_walker: P::new(),
+                arena: &doc_buf.arena,
+                document: self,
+                link_buf: &mut link_buf,
+                in_paragraph: false,
+                last_paragraph_i: 0,
+                get_paragraphs,
+                buffers: &mut doc_buf.parser_buffers,
+                current_tag_is_closing: false,
+                check_anchors,
+            };
+            let mut reader = Tokenizer::new_with_emitter(&doc_buf.read_buf, emitter);
+            assert!(reader.next().is_none());
         }
 
         Ok(link_buf.into_iter())
@@ -533,6 +331,49 @@ fn test_document_href() {
     assert_eq!(
         doc.href(),
         Href("platforms/python/troubleshooting.html".into())
+    );
+}
+
+#[test]
+fn test_html_parsing_malformed_script() {
+    use crate::paragraph::ParagraphHasher;
+
+    let html = r###"
+        <a href=foo />
+        <script>
+        ...
+         * @typedef {{
+         *     name: string,
+         *     id: string,
+         *     score: number,
+         *     description: string,
+         *     audits: !Array<!ReportRenderer.AuditJSON>
+         * }}
+        <a href=wut />
+        ...
+        </script>
+        <a href=bar />
+    "###;
+
+    let doc = Document::new(Path::new("public/"), Path::new("public/hello.html"));
+
+    let mut doc_buf = DocumentBuffers::default();
+
+    let links = doc
+        .links_from_read::<_, ParagraphHasher>(&mut doc_buf, html.as_bytes(), false, false)
+        .unwrap();
+
+    let used_link = |x: &'static str| {
+        Link::Uses(UsedLink {
+            href: Href(x.into()),
+            path: doc.path.clone(),
+            paragraph: None,
+        })
+    };
+
+    assert_eq!(
+        links.collect::<Vec<_>>(),
+        &[used_link("foo"), used_link("wut"), used_link("bar")]
     );
 }
 
@@ -677,14 +518,4 @@ fn test_document_join_bare_html() {
         doc.join(&arena, true, "/platforms/ruby?bar=1#foo"),
         Href("platforms/ruby#foo".into())
     );
-}
-
-#[test]
-fn test_is_bad_schema() {
-    assert!(is_bad_schema(b"//"));
-    assert!(!is_bad_schema(b""));
-    assert!(!is_bad_schema(b"http"));
-    assert!(is_bad_schema(b"http:"));
-    assert!(is_bad_schema(b"http:/"));
-    assert!(!is_bad_schema(b"http/"));
 }

@@ -12,7 +12,7 @@ pub struct ParagraphHasher {
 }
 
 pub trait ParagraphWalker: Send {
-    type Paragraph: Clone + Eq + PartialEq + Hash + Ord + PartialOrd + Send;
+    type Paragraph: Clone + Eq + PartialEq + Hash + Ord + PartialOrd + Send + 'static;
 
     fn new() -> Self;
     fn update_raw(&mut self, text: &[u8]);

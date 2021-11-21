@@ -367,6 +367,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "html5gum"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "071eb9298a567e4280ca38bd3bb57ef4cfea478465bf445af2f23fce26997c32"
+
+[[package]]
 name = "hyperlink"
 version = "0.1.19"
 dependencies = [
@@ -375,13 +381,13 @@ dependencies = [
  "assert_fs",
  "blake3",
  "bumpalo",
+ "html5gum",
  "jwalk",
  "patricia_tree",
  "percent-encoding",
  "predicates 1.0.8",
  "pretty_assertions",
  "pulldown-cmark",
- "quick-xml",
  "rayon",
  "structopt",
 ]
@@ -615,15 +621,6 @@ dependencies = [
  "getopts",
  "memchr",
  "unicase",
-]
-
-[[package]]
-name = "quick-xml"
-version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8533f14c8382aaad0d592c812ac3b826162128b65662331e1127b45c3d18536b"
-dependencies = [
- "memchr",
 ]
 
 [[package]]
