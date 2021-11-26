@@ -3,7 +3,7 @@ mod parser;
 use std::borrow::Cow;
 use std::fmt;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, BufReader};
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::Arc;
@@ -176,14 +176,12 @@ impl<'a, P> Link<'a, P> {
 #[derive(Default)]
 pub struct DocumentBuffers {
     arena: bumpalo::Bump,
-    read_buf: String,
     parser_buffers: parser::ParserBuffers,
 }
 
 impl DocumentBuffers {
     pub fn reset(&mut self) {
         self.arena.reset();
-        self.read_buf.clear();
         self.parser_buffers.reset();
     }
 }
@@ -283,14 +281,13 @@ impl Document {
     fn links_from_read<'b, 'l, R: Read, P: ParagraphWalker>(
         &self,
         doc_buf: &'b mut DocumentBuffers,
-        mut read: R,
+        read: R,
         check_anchors: bool,
         get_paragraphs: bool,
     ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
     where
         'b: 'l,
     {
-        read.read_to_string(&mut doc_buf.read_buf)?;
         let mut link_buf = BumpVec::new_in(&doc_buf.arena);
 
         {
@@ -306,8 +303,11 @@ impl Document {
                 current_tag_is_closing: false,
                 check_anchors,
             };
-            let mut reader = Tokenizer::new_with_emitter(&doc_buf.read_buf, emitter);
-            assert!(reader.next().is_none());
+            let reader = Tokenizer::new_with_emitter(BufReader::new(read), emitter);
+
+            for error in reader {
+                error?;
+            }
         }
 
         Ok(link_buf.into_iter())

@@ -368,9 +368,9 @@ dependencies = [
 
 [[package]]
 name = "html5gum"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "071eb9298a567e4280ca38bd3bb57ef4cfea478465bf445af2f23fce26997c32"
+checksum = "66af8f88b65729f1180ace236863bc0a4a0cbce65ed99360e41306581e99bcda"
 
 [[package]]
 name = "hyperlink"
