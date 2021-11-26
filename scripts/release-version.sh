@@ -7,8 +7,8 @@ current_version="$(grep '^version = ' Cargo.toml | head -1 | cut -d '"' -f2)"
 new_version="$1"
 
 action_prefix="untitaker\\/hyperlink@"
-sed -i '' "s/$action_prefix$current_version/$action_prefix$new_version/" README.md
-sed -i '' "s/version = \"$current_version\"/version = \"$new_version\"/" Cargo.toml
+sed -i.bak "s/$action_prefix$current_version/$action_prefix$new_version/" README.md
+sed -i.bak "s/version = \"$current_version\"/version = \"$new_version\"/" Cargo.toml
 cargo build
 
 git add README.md
