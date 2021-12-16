@@ -368,9 +368,12 @@ dependencies = [
 
 [[package]]
 name = "html5gum"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66af8f88b65729f1180ace236863bc0a4a0cbce65ed99360e41306581e99bcda"
+checksum = "75c37df15dc3ab0710b16856a7fe738c115a7b41ed61a001f13ed19dd1fd8e8a"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "hyperlink"
@@ -452,9 +455,9 @@ dependencies = [
 
 [[package]]
 name = "memchr"
-version = "2.4.0"
+version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b16bd47d9e329435e309c58469fe0791c2d0d1ba96ec0954152a5ae2b04387dc"
+checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
 
 [[package]]
 name = "memoffset"
