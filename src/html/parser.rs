@@ -54,10 +54,10 @@ fn is_bad_schema(url: &[u8]) -> bool {
 
 #[derive(Default)]
 pub struct ParserBuffers {
-    current_tag_name: String,
-    current_attribute_name: String,
-    current_attribute_value: String,
-    last_start_tag: String,
+    current_tag_name: Vec<u8>,
+    current_attribute_name: Vec<u8>,
+    current_attribute_value: Vec<u8>,
+    last_start_tag: Vec<u8>,
 }
 
 impl ParserBuffers {
@@ -88,7 +88,7 @@ where
     P: ParagraphWalker,
 {
     fn extract_used_link(&mut self) {
-        let value = try_normalize_href_value(&self.buffers.current_attribute_value);
+        let value = try_normalize_href_value(std::str::from_utf8(&self.buffers.current_attribute_value).unwrap());
 
         if is_bad_schema(value.as_bytes()) {
             return;
@@ -102,7 +102,7 @@ where
     }
 
     fn extract_used_link_srcset(&mut self) {
-        let value = try_normalize_href_value(&self.buffers.current_attribute_value);
+        let value = try_normalize_href_value(std::str::from_utf8(&self.buffers.current_attribute_value).unwrap());
 
         // https://html.spec.whatwg.org/multipage/images.html#srcset-attribute
         for value in value
@@ -125,7 +125,7 @@ where
     fn extract_anchor_def(&mut self) {
         if self.check_anchors {
             let mut href = BumpString::new_in(self.arena);
-            let value = try_normalize_href_value(&self.buffers.current_attribute_value);
+            let value = try_normalize_href_value(std::str::from_utf8(&self.buffers.current_attribute_value).unwrap());
             href.push('#');
             href.push_str(value);
 
@@ -137,15 +137,15 @@ where
 
     fn flush_old_attribute(&mut self) {
         match (
-            self.buffers.current_tag_name.as_str(),
-            self.buffers.current_attribute_name.as_str(),
+            self.buffers.current_tag_name.as_slice(),
+            self.buffers.current_attribute_name.as_slice(),
         ) {
-            ("link" | "area" | "a", "href") => self.extract_used_link(),
-            ("a", "name") => self.extract_anchor_def(),
-            ("img" | "script" | "iframe", "src") => self.extract_used_link(),
-            ("img", "srcset") => self.extract_used_link_srcset(),
-            ("object", "data") => self.extract_used_link(),
-            (_, "id") => self.extract_anchor_def(),
+            (b"link" | b"area" | b"a", b"href") => self.extract_used_link(),
+            (b"a", b"name") => self.extract_anchor_def(),
+            (b"img" | b"script" | b"iframe", b"src") => self.extract_used_link(),
+            (b"img", b"srcset") => self.extract_used_link_srcset(),
+            (b"object", b"data") => self.extract_used_link(),
+            (_, b"id") => self.extract_anchor_def(),
             _ => (),
         }
 
@@ -161,20 +161,20 @@ where
 {
     type Token = ();
 
-    fn set_last_start_tag(&mut self, last_start_tag: Option<&str>) {
+    fn set_last_start_tag(&mut self, last_start_tag: Option<&[u8]>) {
         self.buffers.last_start_tag.clear();
         self.buffers
             .last_start_tag
-            .push_str(last_start_tag.unwrap_or_default());
+            .extend(last_start_tag.unwrap_or_default());
     }
 
     fn pop_token(&mut self) -> Option<()> {
         None
     }
 
-    fn emit_string(&mut self, c: &str) {
+    fn emit_string(&mut self, c: &[u8]) {
         if self.get_paragraphs && self.in_paragraph {
-            self.paragraph_walker.update(c.as_bytes());
+            self.paragraph_walker.update(c);
         }
     }
 
@@ -195,14 +195,14 @@ where
             self.buffers.last_start_tag.clear();
             self.buffers
                 .last_start_tag
-                .push_str(&self.buffers.current_tag_name);
+                .extend(&self.buffers.current_tag_name);
 
-            if is_paragraph_tag(self.buffers.current_tag_name.as_bytes()) {
+            if is_paragraph_tag(&self.buffers.current_tag_name) {
                 self.in_paragraph = true;
                 self.last_paragraph_i = self.link_buf.len();
                 self.paragraph_walker.finish_paragraph();
             }
-        } else if is_paragraph_tag(self.buffers.current_tag_name.as_bytes()) {
+        } else if is_paragraph_tag(&self.buffers.current_tag_name) {
             let paragraph = self.paragraph_walker.finish_paragraph();
             if self.in_paragraph {
                 for link in &mut self.link_buf[self.last_paragraph_i..] {
@@ -222,25 +222,25 @@ where
     }
 
     fn set_self_closing(&mut self) {
-        if is_paragraph_tag(self.buffers.current_tag_name.as_bytes()) {
+        if is_paragraph_tag(&self.buffers.current_tag_name) {
             self.in_paragraph = false;
         }
     }
 
-    fn push_tag_name(&mut self, s: &str) {
-        self.buffers.current_tag_name.push_str(s);
+    fn push_tag_name(&mut self, s: &[u8]) {
+        self.buffers.current_tag_name.extend(s);
     }
 
     fn init_attribute(&mut self) {
         self.flush_old_attribute();
     }
 
-    fn push_attribute_name(&mut self, s: &str) {
-        self.buffers.current_attribute_name.push_str(s);
+    fn push_attribute_name(&mut self, s: &[u8]) {
+        self.buffers.current_attribute_name.extend(s);
     }
 
-    fn push_attribute_value(&mut self, s: &str) {
-        self.buffers.current_attribute_value.push_str(s);
+    fn push_attribute_value(&mut self, s: &[u8]) {
+        self.buffers.current_attribute_value.extend(s);
     }
 
     fn current_is_appropriate_end_tag_token(&mut self) -> bool {
@@ -255,12 +255,12 @@ where
     fn emit_error(&mut self, _: Error) {}
     fn init_comment(&mut self) {}
     fn init_doctype(&mut self) {}
-    fn push_comment(&mut self, _: &str) {}
-    fn push_doctype_name(&mut self, _: &str) {}
-    fn push_doctype_public_identifier(&mut self, _: &str) {}
-    fn push_doctype_system_identifier(&mut self, _: &str) {}
-    fn set_doctype_public_identifier(&mut self, _: &str) {}
-    fn set_doctype_system_identifier(&mut self, _: &str) {}
+    fn push_comment(&mut self, _: &[u8]) {}
+    fn push_doctype_name(&mut self, _: &[u8]) {}
+    fn push_doctype_public_identifier(&mut self, _: &[u8]) {}
+    fn push_doctype_system_identifier(&mut self, _: &[u8]) {}
+    fn set_doctype_public_identifier(&mut self, _: &[u8]) {}
+    fn set_doctype_system_identifier(&mut self, _: &[u8]) {}
     fn set_force_quirks(&mut self) {}
 }
 
