@@ -3,7 +3,7 @@ mod parser;
 use std::borrow::Cow;
 use std::fmt;
 use std::fs;
-use std::io::{BufReader, Read};
+use std::io::{Read};
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::Arc;
@@ -11,7 +11,7 @@ use std::sync::Arc;
 use anyhow::Error;
 use bumpalo::collections::String as BumpString;
 use bumpalo::collections::Vec as BumpVec;
-use html5gum::Tokenizer;
+use html5gum::{IoReader, Tokenizer};
 
 use crate::paragraph::ParagraphWalker;
 
@@ -303,7 +303,7 @@ impl Document {
                 current_tag_is_closing: false,
                 check_anchors,
             };
-            let reader = Tokenizer::new_with_emitter(BufReader::new(read), emitter);
+            let reader = Tokenizer::new_with_emitter(IoReader::new(read), emitter);
 
             for error in reader {
                 error?;

@@ -370,7 +370,6 @@ dependencies = [
 name = "html5gum"
 version = "0.3.0"
 dependencies = [
- "bstr",
  "memchr",
 ]
 
