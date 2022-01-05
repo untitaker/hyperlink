@@ -7,7 +7,6 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
-structopt = "0.3.23"
 anyhow = "1.0.40"
 rayon = "1.5.1"
 pulldown-cmark = "0.8.0"
@@ -18,6 +17,7 @@ jwalk = "0.6.0"
 patricia_tree = "0.3.1"
 bumpalo = { version = "3.8.0", features = ["collections"] }
 percent-encoding = "2.1.0"
+clap = { version = "3.0.4", features = ["derive"] }
 
 [dev-dependencies]
 assert_cmd = "2.0.2"

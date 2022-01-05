@@ -9,10 +9,10 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use anyhow::{anyhow, Context, Error};
+use clap::Parser;
 use jwalk::WalkDir;
 use markdown::DocumentSource;
 use rayon::prelude::*;
-use structopt::StructOpt;
 
 use collector::{BrokenLinkCollector, LinkCollector, UsedLinkCollector};
 use html::{DefinedLink, Document, DocumentBuffers, Link};
@@ -21,8 +21,8 @@ use paragraph::{DebugParagraphWalker, NoopParagraphWalker, ParagraphHasher, Para
 static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
 static HTML_FILES: &[&str] = &["htm", "html"];
 
-#[derive(StructOpt)]
-#[structopt(name = "hyperlink")]
+#[derive(Parser)]
+#[clap(about, version, author)]
 struct Cli {
     /// The static file path to check.
     ///
@@ -32,27 +32,27 @@ struct Cli {
     base_path: Option<PathBuf>,
 
     /// How many threads to use, default is to try and saturate CPU.
-    #[structopt(short = "j", long = "jobs")]
+    #[clap(short = 'j', long = "jobs")]
     threads: Option<usize>,
 
     /// Whether to check for valid anchor references.
-    #[structopt(long = "check-anchors")]
+    #[clap(long = "check-anchors")]
     check_anchors: bool,
 
     /// Path to directory of markdown files to use for reporting errors.
-    #[structopt(long = "sources")]
+    #[clap(long = "sources")]
     sources_path: Option<PathBuf>,
 
     /// Enable specialized output for GitHub actions.
-    #[structopt(long = "github-actions")]
+    #[clap(long = "github-actions")]
     github_actions: bool,
 
     /// Utilities for development of hyperlink.
-    #[structopt(subcommand)]
+    #[clap(subcommand)]
     subcommand: Option<Subcommand>,
 }
 
-#[derive(StructOpt)]
+#[derive(Parser)]
 enum Subcommand {
     /// Dump out internal data for markdown or html file. This is mostly useful to figure out why
     /// a source file is not properly matched up with its target html file.
@@ -92,7 +92,7 @@ fn main() -> Result<(), Error> {
         sources_path,
         github_actions,
         subcommand,
-    } = Cli::from_args();
+    } = Cli::parse();
 
     if let Some(n) = threads {
         rayon::ThreadPoolBuilder::new()
@@ -120,10 +120,10 @@ fn main() -> Result<(), Error> {
             // Invalid invocation. Ultra hack to show help if no arguments are provided. Structopt
             // does not seem to have a functional way to require either an argument or a
             // subcommand. required_if etc don't actually work.
-            let help_message = Cli::from_iter_safe(&["hyperlink", "--help"])
+            let help_message = Cli::try_parse_from(&["hyperlink", "--help"])
                 .map(|_| ())
                 .unwrap_err();
-            eprintln!("{}", help_message.message);
+            help_message.print()?;
             process::exit(1);
         }
     };
