@@ -22,7 +22,7 @@ static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
 static HTML_FILES: &[&str] = &["htm", "html"];
 
 #[derive(Parser)]
-#[clap(about, version, author)]
+#[clap(about, version)]
 struct Cli {
     /// The static file path to check.
     ///
