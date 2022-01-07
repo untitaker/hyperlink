@@ -628,11 +628,10 @@ $"#,
         cmd.assert()
             .failure()
             .code(1)
-            .stdout("")
-            .stderr(predicate::str::contains(
+            .stdout(predicate::str::contains(
                 "\
 USAGE:
-    hyperlink [FLAGS] [OPTIONS] [base-path] [SUBCOMMAND]\
+    hyperlink [OPTIONS] [BASE_PATH] [SUBCOMMAND]\
 ",
             ));
     }
