@@ -370,7 +370,7 @@ dependencies = [
 name = "html5gum"
 version = "0.3.0"
 dependencies = [
- "memchr",
+ "jetscii",
 ]
 
 [[package]]
@@ -419,6 +419,12 @@ checksum = "69ddb889f9d0d08a67338271fa9b62996bc788c7796a5c18cf057420aaed5eaf"
 dependencies = [
  "either",
 ]
+
+[[package]]
+name = "jetscii"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9447923c57a8a2d5c1b0875cdf96a6324275df728b498f2ede0e5cbde088a15"
 
 [[package]]
 name = "jwalk"
