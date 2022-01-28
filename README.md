@@ -110,7 +110,7 @@ links. However, it can do more.
 section contains partially dated measurements and is not continuously updated
 with regards to either performance or featureset)*
 
-None of the listed alternatives have an equivalent to `hyperlink`'s `--source`
+None of the listed alternatives have an equivalent to `hyperlink`'s `--sources`
 and `--github-actions` feature.
 
 * [lychee](https://github.com/lycheeverse/lychee), like `hyperlink`, is a great
