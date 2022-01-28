@@ -106,10 +106,28 @@ links. However, it can do more.
 
 ## Alternatives
 
-* [wummel/linkchecker](https://wummel.github.io/linkchecker/) seems to be the
-  most feature rich out of all, but was a non-starter due to performance. This
-  applies to other countless link checkers we tried that are not mentioned
-  here.
+*(roughly ranked by performance, determined by some unserious benchmark. this
+section contains partially dated measurements and is not continuously updated
+with regards to either performance or featureset)*
+
+None of the listed alternatives have an equivalent to `hyperlink`'s `--source`
+and `--github-actions` feature.
+
+* [lychee](https://github.com/lycheeverse/lychee), like `hyperlink`, is a great
+  choice for obscenely large static sites. Additionally it can check
+  external/outbound links. An invocation of `lychee --offline -b . '**/*.htm*'
+  -n` is more or less equivalent to `hyperlink .`.
+
+* [liche](https://github.com/raviqqe/liche) seems to be fairly fast, but is
+  unmaintained.
+
+* [htmltest](https://github.com/wjdp/htmltest) seems to be fairly fast as well,
+  and is more of a general-purpose HTML linting tool.
+
+* [muffet](https://github.com/raviqqe/muffet) seems to have similar performance
+  as `htmltest`. We tested `muffet` with
+  [`http-server`](https://www.npmjs.com/package/http-server) and webfsd without
+  noticing a change in timings.
 
 * [linkcheck](https://github.com/filiph/linkcheck) is faster than `linkchecker`
   but still quite slow on large sites.
@@ -118,21 +136,9 @@ links. However, it can do more.
   [`http-server`](https://www.npmjs.com/package/http-server) on localhost,
   although that does not seem to be the bottleneck at all.
 
-* [htmltest](https://github.com/wjdp/htmltest) is one of the fastest
-  linkcheckers we've tried (after disabling most checks to ensure feature
-  parity with `hyperlink`), however is still slower than `hyperlink` in
-  single-threaded mode (`-j 1`)
-
-* [muffet](https://github.com/raviqqe/muffet) seems to have similar performance
-  as `htmltest`. We tested `muffet` with
-  [`http-server`](https://www.npmjs.com/package/http-server) and webfsd without
-  noticing a change in timings.
-
-* [liche](https://github.com/raviqqe/liche) seems to be closest in performance
-  to `hyperlink`.
-
-* [lychee](https://github.com/lycheeverse/lychee) can do filesystem traversal,
-  but generally overlaps with hyperlink's usecases only a little.
+* [wummel/linkchecker](https://wummel.github.io/linkchecker/) seems to be the
+  fairly feature-rich, but was a non-starter due to performance. This applies
+  to other countless link checkers we tried that are not mentioned here.
 
 ## License
 
