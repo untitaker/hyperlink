@@ -42,14 +42,22 @@ jobs:
             os: ubuntu-latest
             asset_name: hyperlink-linux-x86_64
             cargo_name: hyperlink
+            rustup_target: x86_64-unknown-linux-musl
           - build: macos
+            os: macos-latest
             asset_name: hyperlink-mac-x86_64
             cargo_name: hyperlink
-            os: macos-latest
+            rustup_target: x86_64-apple-darwin
           - build: windows
-            cargo_name: hyperlink.exe
-            asset_name: hyperlink-windows-x86_64.exe
             os: windows-latest
+            asset_name: hyperlink-windows-x86_64.exe
+            cargo_name: hyperlink.exe
+            rustup_target: x86_64-pc-windows-msvc
+          - build: macos-m1
+            os: macos-latest
+            asset_name: hyperlink-mac-aarch64
+            cargo_name: hyperlink
+            rustup_target: aarch64-apple-darwin
 
     steps:
       - uses: actions/checkout@v1
@@ -67,9 +75,10 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+          target: ${{ matrix.rustup_target }}
 
       - name: Build
-        run: cargo build --verbose --release --locked
+        run: cargo build --verbose --release --locked --target ${{ matrix.rustup_target }}
 
       - name: Upload Release Asset
         id: upload-release-asset
