@@ -87,6 +87,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.get-release-info.outputs.upload_url }}
-          asset_path: ./target/release/${{ matrix.rustup_target }}/${{ matrix.cargo_name }}
+          asset_path: ./target/${{ matrix.rustup_target }}/release/${{ matrix.cargo_name }}
           asset_name: ${{ matrix.asset_name }}
           asset_content_type: application/zip
