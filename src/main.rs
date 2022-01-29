@@ -271,9 +271,9 @@ where
 
 fn print_href_error(message: &'static str, href: &str, lineno: Option<usize>) {
     if let Some(lineno) = lineno {
-        println!("  {} {} at line {}", message, href, lineno);
+        println!("  {} /{} at line {}", message, href, lineno);
     } else {
-        println!("  {} {}", message, href);
+        println!("  {} /{}", message, href);
     }
 }
 
@@ -585,7 +585,7 @@ mod tests {
                 r#"^Reading files
 Checking 1 links from 1 files \(1 documents\)
 \..index\.html
-  error: bad link bar.html
+  error: bad link /bar.html
 
 Found 1 bad links
 "#,
@@ -610,7 +610,7 @@ Found 1 bad links
                 r#"^Reading files
 Checking 1 links from 2 files \(2 documents\)
 \..index\.html
-  error: bad link bar.html#goo
+  error: bad link /bar.html#goo
 
 Found 0 bad links
 Found 1 bad anchors
