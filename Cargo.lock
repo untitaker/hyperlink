@@ -94,9 +94,9 @@ dependencies = [
 
 [[package]]
 name = "bstr"
-version = "0.2.16"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90682c8d613ad3373e66de8c6411e0ae2ab2571e879d2efbf73558cc66f21279"
+checksum = "ba3569f383e8f1598449f1a423e72e99569137b47740b1da11ef19af3d5c3223"
 dependencies = [
  "lazy_static",
  "memchr",
@@ -363,11 +363,11 @@ dependencies = [
 
 [[package]]
 name = "html5gum"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75c37df15dc3ab0710b16856a7fe738c115a7b41ed61a001f13ed19dd1fd8e8a"
+checksum = "2dad48b66db55322add2819ae1d7bda0c32f3415269a08330679dbc8b0afeb30"
 dependencies = [
- "memchr",
+ "jetscii",
 ]
 
 [[package]]
@@ -426,6 +426,12 @@ checksum = "69ddb889f9d0d08a67338271fa9b62996bc788c7796a5c18cf057420aaed5eaf"
 dependencies = [
  "either",
 ]
+
+[[package]]
+name = "jetscii"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9447923c57a8a2d5c1b0875cdf96a6324275df728b498f2ede0e5cbde088a15"
 
 [[package]]
 name = "jwalk"

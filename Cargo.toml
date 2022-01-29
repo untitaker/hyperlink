@@ -12,7 +12,7 @@ rayon = "1.5.1"
 pulldown-cmark = "0.8.0"
 blake3 = "1.0.0"
 
-html5gum = "0.3.0"
+html5gum = "0.4.0"
 jwalk = "0.6.0"
 patricia_tree = "0.3.1"
 bumpalo = { version = "3.8.0", features = ["collections"] }
