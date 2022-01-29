@@ -140,6 +140,27 @@ and `--github-actions` feature.
   fairly feature-rich, but was a non-starter due to performance. This applies
   to other countless link checkers we tried that are not mentioned here.
 
+## Testimonials
+
+> We use Hyperlink to check for dead links on
+> [Graphviz's static-site user documentation](https://graphviz.org/), because:
+> 
+> * Hyperlink is *blazingly* fast, checking 700 HTML pages in 220ms (default) and
+>   850ms (with `--check-anchors`).
+> * Hyperlink's single-binary release, with no library dependencies,
+>   was trivial to integrate into our [continuous integration tests](https://gitlab.com/graphviz/graphviz.gitlab.io/-/blob/5dcfa637b7df17e3a1b821f3d7e9de8f5f82544b/.gitlab-ci.yml#L27).
+> * High coverage: Hyperlink immediately spotted over a thousand broken page
+>   links within both `<a>` tags and HTML redirects, and a further 62 broken
+>   anchor-links with `--check-anchors`.
+> * Hyperlink's design decision to crawl only static files (avoiding HTTP),
+>   avoids test flakiness from network requests, allowing me to confidently
+>   block merging if Hyperlink reports an error.
+>
+> In conclusion, Hyperlink fills the "static site continuous testing" niche
+> really nicely.
+
+-- Mark Hansen, Graphviz documentation maintainer
+
 ## License
 
 Licensed under the MIT, see [`./LICENSE`](./LICENSE).
