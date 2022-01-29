@@ -159,7 +159,7 @@ and `--github-actions` feature.
 > In conclusion, Hyperlink fills the "static site continuous testing" niche
 > really nicely.
 
--- Mark Hansen, Graphviz documentation maintainer:
+-- Mark Hansen, Graphviz documentation maintainer
 
 ## License
 
