@@ -46,13 +46,13 @@ Hyperlink neither has a global queue, nor does it regard your website as a
 graph of links. Instead it roughly does this:
 
 1. Enumerate all files on the filesystem.
-3. For each file, create one or more `LinkCollector`s (in parallel)
-4. For each pair of `LinkCollector`s, _merge_ them together into one `LinkCollector` (in parallel)
-5. At the end, one `LinkCollector` remains. It contains the list of broken links.
+2. For each file, create one or more `LinkCollector`s (in parallel)
+3. For each pair of `LinkCollector`s, _merge_ them together into one `LinkCollector` (in parallel)
+4. At the end, one `LinkCollector` remains. It contains the list of broken links.
 
 Basically, we did a [map-reduce](https://en.wikipedia.org/wiki/MapReduce) here.
 The main point, for our purposes, is that there's no shared state across
-threads in Step 3, and Step 4 minimizes the amount of shared state because
+threads in Step 2, and Step 3 minimizes the amount of shared state because
 merging two `LinkCollector`s can happen independently of other merging
 operations.
 
@@ -69,7 +69,7 @@ type LinkCollector = HashMap<String, LinkState>;
 type LinkUsers = Vec<String>;
 ```
 
-And this is how Step 3 actually works:
+And this is how Step 2 actually works:
 
 * For a file `/hello.jpg`, hyperlink will create a
   `LinkCollector` such as:
@@ -91,7 +91,7 @@ And this is how Step 3 actually works:
   }
   ```
 
-And this is what Step 4 does:
+And this is what Step 3 does:
 
 1. Merge two `LinkCollector` instances by merging the two mappings into one.
    When the same key is present in both maps, a value of `LinkState::Defined`
