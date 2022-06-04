@@ -59,8 +59,12 @@ Or as GitHub action:
     args: public/ --sources src/
 ```
 
-Or build from source by [installing Rust](https://rustup.rs/) and running
-`cargo build --release`.
+Or build from source using Cargo (needs [Rust](https://rustup.rs/) installed):
+
+```bash
+cargo install hyperlink  # latest stable release
+cargo install --git https://github.com/untitaker/hyperlink  # latest git SHA
+```
 
 ## Options
 
