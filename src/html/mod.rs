@@ -3,7 +3,7 @@ mod parser;
 use std::borrow::Cow;
 use std::fmt;
 use std::fs;
-use std::io::{Read};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::Arc;

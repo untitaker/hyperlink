@@ -88,7 +88,9 @@ where
     P: ParagraphWalker,
 {
     fn extract_used_link(&mut self) {
-        let value = try_normalize_href_value(std::str::from_utf8(&self.buffers.current_attribute_value).unwrap());
+        let value = try_normalize_href_value(
+            std::str::from_utf8(&self.buffers.current_attribute_value).unwrap(),
+        );
 
         if is_bad_schema(value.as_bytes()) {
             return;
@@ -102,7 +104,9 @@ where
     }
 
     fn extract_used_link_srcset(&mut self) {
-        let value = try_normalize_href_value(std::str::from_utf8(&self.buffers.current_attribute_value).unwrap());
+        let value = try_normalize_href_value(
+            std::str::from_utf8(&self.buffers.current_attribute_value).unwrap(),
+        );
 
         // https://html.spec.whatwg.org/multipage/images.html#srcset-attribute
         for value in value
@@ -125,7 +129,9 @@ where
     fn extract_anchor_def(&mut self) {
         if self.check_anchors {
             let mut href = BumpString::new_in(self.arena);
-            let value = try_normalize_href_value(std::str::from_utf8(&self.buffers.current_attribute_value).unwrap());
+            let value = try_normalize_href_value(
+                std::str::from_utf8(&self.buffers.current_attribute_value).unwrap(),
+            );
             href.push('#');
             href.push_str(value);
 
