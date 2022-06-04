@@ -2,6 +2,10 @@
 name = "hyperlink"
 version = "0.1.21"
 authors = ["Markus Unterwaditzer <markus-honeypot@unterwaditzer.net>"]
+description = "Very fast link checker for CI."
+homepage = "https://github.com/untitaker/hyperlink"
+documentation = "https://github.com/untitaker/hyperlink"
+repository = "https://github.com/untitaker/hyperlink"
 edition = "2018"
 license = "MIT"
 readme = "README.md"
