@@ -1,8 +1,9 @@
 # Overview over how hyperlink operates (or: why is it so fast?)
 
-In this document we'll explore how hyperlink, a link checker for static sites,
-behaves differently from a general-purpose link checker for checking static
-sites, and why that makes it faster (in theory and often in practice)
+In this document we'll explore how
+[hyperlink](https://github.com/untitaker/hyperlink), a link checker for static
+sites, behaves differently from a general-purpose link checker for checking
+static sites, and why that makes it faster (in theory and often in practice)
 
 Typically you'd think of a website and its links as a graph to traverse, where
 the nodes are HTML documents and the edges are links between the documents.
@@ -27,8 +28,8 @@ There's two performance problems with this approach that hyperlink avoids:
    Most link checkers are smart enough to initialize the queue with all files
    on the file system in cases where a folder of files should be checked, but
    it's completely unavoidable when traversing arbitrary URLs over the
-   internet. Hyperlink has it relatively easy by not supporting any external
-   links.
+   internet. Hyperlink has it relatively easy by only supporting static sites
+   on the local filesystem and not supporting any external links.
 
 2. Having a global queue can also impact parallelism. If checking external
    links, your work is purely I/O bound, but if you're checking a folder of
@@ -43,21 +44,7 @@ There's two performance problems with this approach that hyperlink avoids:
    Because the alternative is to check some links twice.
 
 Hyperlink neither has a global queue, nor does it regard your website as a
-graph of links. Instead it roughly does this:
-
-1. Enumerate all files on the filesystem.
-2. For each file, create one or more `LinkCollector`s (in parallel)
-3. For each pair of `LinkCollector`s, _merge_ them together into one `LinkCollector` (in parallel)
-4. At the end, one `LinkCollector` remains. It contains the list of broken links.
-
-Basically, we did a [map-reduce](https://en.wikipedia.org/wiki/MapReduce) here.
-The main point, for our purposes, is that there's no shared state across
-threads in Step 2, and Step 3 minimizes the amount of shared state because
-merging two `LinkCollector`s can happen independently of other merging
-operations.
-
-So what's a `LinkCollector`? Basically it's a mapping from a filepath (relative
-to the website root) to an enum that looks like this:
+graph of links. First, it defines datatypes like the following:
 
 ```rust
 enum LinkState {
@@ -69,42 +56,68 @@ type LinkCollector = HashMap<String, LinkState>;
 type LinkUsers = Vec<String>;
 ```
 
-And this is how Step 2 actually works:
+Then it runs the following procedure:
 
-* For a file `/hello.jpg`, hyperlink will create a
-  `LinkCollector` such as:
+1. Enumerate all files on the filesystem.
 
-  ```json
-  {
-      "/hello.jpg": LinkState::Defined
-  }
-  ```
+2. For each file, create one or more `LinkCollector`s:
 
-* For a file `/hello.html`, hyperlink will create a similar
-  `LinkCollector`, but additionally it will, for a `<a
-  href=/hello.jpg>` found in the document, create another
-  `LinkCollector`:
+    * For a file `/index.html`, hyperlink will create a `LinkCollector` such as:
 
-  ```json
-  {
-      "/hello.jpg": LinkState::Undefined(["/hello.html"])
-  }
-  ```
+      ```json
+      {
+          "/index.html": LinkState::Defined
+      }
+      ```
 
-And this is what Step 3 does:
+    * For a parsed link `/about.html` inside of that file, it will create:
 
-1. Merge two `LinkCollector` instances by merging the two mappings into one.
-   When the same key is present in both maps, a value of `LinkState::Defined`
-   wins over any `Undefined` value.
+      ```json
+      {
+          "/about.html": LinkState::Undefined(["/index.html"])
+      }
+      ```
 
-2. Keep folding `LinkCollector`s together like that until there's only one
-   `LinkCollector`.
+    * For a file `/about.html`, it will create:
 
-3. All map entries set to `LinkState::Undefined` are broken links to report.
-   The map key is the missing document, and the map value is a list of
-   locations where the broken link has been found.
+      ```json
+      {
+          "/about.html": LinkState::Defined
+      }
+      ```
 
-   `LinkState::Defined` can be completely ignored at this stage.
+    * For a parsed link `/404.html` inside of that file, it will create:
+
+      ```json
+      {
+          "/404.html": LinkState::Undefined(["/about.html"])
+      }
+      ```
+
+3. Merge all `LinkCollector`s into one, just as one would merge hashmaps
+   together. For conflicting keys, these rules apply:
+
+   * `Defined` wins over `Undefined`
+   * Two conflicting `Undefined` values are concatenated together.
+
+   In the above example, we'd be left with this:
+
+   ```json
+   {
+       "/index.html": LinkState::Defined,
+       "/about.html": LinkState::Defined,
+       "/404.html": LinkState::Undefined(["/about.html"])
+   }
+   ```
+
+4. At the end, one `LinkCollector` remains. After filtering out all the
+   `Defined` entries, hyperlink now knows that the link to `/404.html` inside
+   of the file `/about.html` is broken.
+
+Basically, we did a [map-reduce](https://en.wikipedia.org/wiki/MapReduce) here.
+The great part about this is that there's no shared state across threads in
+Step 2, and Step 3 minimizes the amount of shared state because merging two
+`LinkCollector`s can happen independently of other merging operations.
 
 ## Implementation
 
