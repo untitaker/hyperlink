@@ -1,7 +1,7 @@
 use bumpalo::collections::String as BumpString;
 use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
-use html5gum::{Emitter, Error};
+use html5gum::{Emitter, Error, State};
 
 use crate::html::{DefinedLink, Document, Link, UsedLink};
 use crate::paragraph::ParagraphWalker;
@@ -194,11 +194,11 @@ where
         self.current_tag_is_closing = true;
     }
 
-    fn emit_current_tag(&mut self) {
+    fn emit_current_tag(&mut self) -> Option<State> {
         self.flush_old_attribute();
 
+        self.buffers.last_start_tag.clear();
         if !self.current_tag_is_closing {
-            self.buffers.last_start_tag.clear();
             self.buffers
                 .last_start_tag
                 .extend(&self.buffers.current_tag_name);
@@ -225,6 +225,7 @@ where
         }
 
         self.buffers.current_tag_name.clear();
+        html5gum::naive_next_state(&self.buffers.last_start_tag)
     }
 
     fn set_self_closing(&mut self) {

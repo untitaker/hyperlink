@@ -373,7 +373,7 @@ fn test_html_parsing_malformed_script() {
 
     assert_eq!(
         links.collect::<Vec<_>>(),
-        &[used_link("foo"), used_link("wut"), used_link("bar")]
+        &[used_link("foo"), used_link("bar")]
     );
 }
 
