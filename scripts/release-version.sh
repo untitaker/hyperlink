@@ -18,6 +18,8 @@ sed -i.bak "s/$action_prefix$current_version/$action_prefix$new_version/" README
 rm README.md.bak
 sed -i.bak "s/version = \"$current_version\"/version = \"$new_version\"/" Cargo.toml
 rm Cargo.toml.bak
+sed -i.bak "s/\"version\": \"$current_version\"/\"version\": \"$new_version\"/" package.json
+rm package.json.bak
 
 echo ">>> Running tests"
 cargo build
@@ -36,6 +38,7 @@ set +x
 
 echo "things left to do:"
 echo "  cargo publish"
+echo "  npm publish"
 echo "  git push"
 echo "  git push origin $new_version"
 echo "  uncheck and check 'Publish to Marketplace' property of the new release"
