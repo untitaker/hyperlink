@@ -66,6 +66,12 @@ cargo install hyperlink  # latest stable release
 cargo install --git https://github.com/untitaker/hyperlink  # latest git SHA
 ```
 
+Or install via npm:
+
+```bash
+npm install -g @untitaker/hyperlink
+```
+
 ## Options
 
 When invoked without options, `hyperlink` only checks for 404s of internal
