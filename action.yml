@@ -19,5 +19,5 @@ runs:
       shell: bash
 
     - name: Run Hyperlink
-      run: ${{ github.action_path }}/hyperlink ${{ inputs.args }} --github-actions
+      run: ${{ github.action_path }}/scripts/hyperlink-bin ${{ inputs.args }} --github-actions
       shell: bash
