@@ -123,8 +123,8 @@ and `--github-actions` feature.
 
 * [lychee](https://github.com/lycheeverse/lychee), like `hyperlink`, is a great
   choice for obscenely large static sites. Additionally it can check
-  external/outbound links. An invocation of `lychee --offline .` is more or
-  less equivalent to `hyperlink .`.
+  external/outbound links. An invocation of `lychee --offline public/` is more or
+  less equivalent to `hyperlink public/`.
 
 * [liche](https://github.com/raviqqe/liche) seems to be fairly fast, but is
   unmaintained.
