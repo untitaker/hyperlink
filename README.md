@@ -3,10 +3,8 @@
 A command-line tool to find broken links in your static site.
 
 * **Fast.** [docs.sentry.io](https://github.com/getsentry/sentry-docs) produces
-  1.1 GB of HTML files. All [alternatives](#alternatives) we tried were slower
-  than `hyperlink` on this site.
-
-  `hyperlink` handles this amount of data in 4 seconds on a MacBook Pro 2018.
+  1.1 GB of HTML files. `hyperlink` handles this amount of data in 4 seconds on
+  a MacBook Pro 2018. See [Alternatives](#alternatives) for a performance comparison.
 
 * **Pay for what you need.** By default, `hyperlink` checks for hard 404s in
   internal links only. Anything beyond that is opt-in. See [Options](#options)
@@ -125,8 +123,8 @@ and `--github-actions` feature.
 
 * [lychee](https://github.com/lycheeverse/lychee), like `hyperlink`, is a great
   choice for obscenely large static sites. Additionally it can check
-  external/outbound links. An invocation of `lychee --offline -b . '**/*.htm*'
-  -n` is more or less equivalent to `hyperlink .`.
+  external/outbound links. An invocation of `lychee --offline .` is more or
+  less equivalent to `hyperlink .`.
 
 * [liche](https://github.com/raviqqe/liche) seems to be fairly fast, but is
   unmaintained.
