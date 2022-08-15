@@ -1,0 +1,16 @@
+# We release a docker image for every commit and for every tag
+name: Release Docker
+
+on:
+  push:
+    branches: [ main ]
+    tags: '*'
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - run: docker build . -t ghcr.io/untitaker/hyperlink:${{ github.ref }}
+      - run: docker push ghcr.io/untitaker/hyperlink:${{ github.ref }}
