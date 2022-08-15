@@ -2,8 +2,6 @@
 name: Release Docker
 
 on:
-  push:
-    branches: '*'
   release:
     types: [published]
 
