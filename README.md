@@ -61,16 +61,17 @@ A command-line tool to find broken links in your static site.
 
 ```bash
 npm install -g @untitaker/hyperlink
+hyperlink public/ --sources src/
 ```
 
 ### Docker
 
 ```bash
 # latest version
-docker run -v $PWD:/check ghcr.io/untitaker/hyperlink:latest check/
+docker run -v $PWD:/check ghcr.io/untitaker/hyperlink:latest /check/public/ --sources /check/src/
 
 # master
-docker run -v $PWD:/check ghcr.io/untitaker/hyperlink:sha-82ca78c check/
+docker run -v $PWD:/check ghcr.io/untitaker/hyperlink:sha-82ca78c /check/public/ --sources /check/src
 ```
 
 [See all available tags](https://github.com/untitaker/hyperlink/pkgs/container/hyperlink)
