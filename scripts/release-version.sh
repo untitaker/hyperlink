@@ -13,8 +13,8 @@ fi
 
 echo ">>> Bumping version"
 
-action_prefix="untitaker\\/hyperlink@"
-sed -i.bak "s/$action_prefix$current_version/$action_prefix$new_version/" README.md
+readme_pattern='\(untitaker\/hyperlink[@:]\)'
+sed -i.bak "s/$readme_pattern$current_version/\\1$new_version/" README.md
 rm README.md.bak
 sed -i.bak "s/version = \"$current_version\"/version = \"$new_version\"/" Cargo.toml
 rm Cargo.toml.bak

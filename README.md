@@ -52,7 +52,7 @@ A command-line tool to find broken links in your static site.
 ### GitHub action
 
 ```yaml
-- uses: untitaker/hyperlink@0.1.26
+- uses: untitaker/hyperlink@0.1.27
   with:
     args: public/ --sources src/
 ```
@@ -67,10 +67,9 @@ hyperlink public/ --sources src/
 ### Docker
 
 ```bash
-# latest version
-docker run -v $PWD:/check ghcr.io/untitaker/hyperlink:latest /check/public/ --sources /check/src/
+docker run -v $PWD:/check ghcr.io/untitaker/hyperlink:0.1.27 /check/public/ --sources /check/src/
 
-# master
+# specific commit
 docker run -v $PWD:/check ghcr.io/untitaker/hyperlink:sha-82ca78c /check/public/ --sources /check/src
 ```
 
