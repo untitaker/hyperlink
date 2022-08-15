@@ -3,10 +3,8 @@ name: Release Docker
 
 on:
   push:
-    branches: [ main ]
+    branches: '*'
     tags: '*'
-  pull_request:
-    branches: [ main ]
 
 jobs:
   docker:
