@@ -49,7 +49,7 @@ A command-line tool to find broken links in your static site.
 ./hyperlink public/ --sources src/
 ```
 
-Or as GitHub action:
+### GitHub action
 
 ```yaml
 - uses: untitaker/hyperlink@0.1.25
@@ -57,17 +57,29 @@ Or as GitHub action:
     args: public/ --sources src/
 ```
 
-Or build from source using Cargo (needs [Rust](https://rustup.rs/) installed):
+### NPM
+
+```bash
+npm install -g @untitaker/hyperlink
+```
+
+### Docker
+
+```bash
+# latest version
+docker run -v $PWD:/check ghcr.io/untitaker/hyperlink:latest check/
+
+# master
+docker run -v $PWD:/check ghcr.io/untitaker/hyperlink:sha-82ca78c check/
+```
+
+[See all available tags](https://github.com/untitaker/hyperlink/pkgs/container/hyperlink)
+
+### From source
 
 ```bash
 cargo install hyperlink  # latest stable release
 cargo install --git https://github.com/untitaker/hyperlink  # latest git SHA
-```
-
-Or install via npm:
-
-```bash
-npm install -g @untitaker/hyperlink
 ```
 
 ## Options
