@@ -52,7 +52,7 @@ A command-line tool to find broken links in your static site.
 ### GitHub action
 
 ```yaml
-- uses: untitaker/hyperlink@0.1.25
+- uses: untitaker/hyperlink@0.1.26
   with:
     args: public/ --sources src/
 ```
