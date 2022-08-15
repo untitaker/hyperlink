@@ -1,20 +1,36 @@
-# We release a docker image for every commit and for every tag
+# https://docs.github.com/en/actions/publishing-packages/publishing-docker-images
 name: Release Docker
 
 on:
   push:
     branches: '*'
-    tags: '*'
+  release:
+    types: [published]
 
 jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      # https://github.com/marketplace/actions/push-to-ghcr
-      # intentionally pin by git SHA
-      - name: Build and publish
-        uses: macbre/push-to-ghcr@f8c5ca63cb68e7eff51ca8fa827ebd8096c7832e
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
         with:
-          image_name: ${{ github.repository }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@98669ae865ea3cffbcbaa878cf57c20bbf1c6c38
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}
+
+      - name: Build and push Docker images
+        uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
