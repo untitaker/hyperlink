@@ -10,6 +10,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v2
       # https://github.com/marketplace/actions/push-to-ghcr
       # intentionally pin by git SHA
       - name: Build and publish
