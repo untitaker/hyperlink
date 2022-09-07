@@ -16,42 +16,6 @@ fn try_normalize_href_value(input: &str) -> &str {
     input.trim()
 }
 
-#[inline]
-fn is_bad_schema(url: &[u8]) -> bool {
-    // check if url is empty
-    let first_char = match url.first() {
-        Some(x) => x,
-        None => return false,
-    };
-
-    // protocol-relative URL
-    if url.starts_with(b"//") {
-        return true;
-    }
-
-    // check if string before first : is a valid URL scheme
-    // see RFC 2396, Appendix A for what constitutes a valid scheme
-
-    if !matches!(first_char, b'a'..=b'z' | b'A'..=b'Z') {
-        return false;
-    }
-
-    for c in &url[1..] {
-        match c {
-            b'a'..=b'z' => (),
-            b'A'..=b'Z' => (),
-            b'0'..=b'9' => (),
-            b'+' => (),
-            b'-' => (),
-            b'.' => (),
-            b':' => return true,
-            _ => return false,
-        }
-    }
-
-    false
-}
-
 #[derive(Default)]
 pub struct ParserBuffers {
     current_tag_name: Vec<u8>,
@@ -92,10 +56,6 @@ where
             std::str::from_utf8(&self.buffers.current_attribute_value).unwrap(),
         );
 
-        if is_bad_schema(value.as_bytes()) {
-            return;
-        }
-
         self.link_buf.push(Link::Uses(UsedLink {
             href: self.document.join(self.arena, self.check_anchors, value),
             path: self.document.path.clone(),
@@ -114,10 +74,6 @@ where
             .filter_map(|candidate: &str| candidate.split_whitespace().next())
             .filter(|value| !value.is_empty())
         {
-            if is_bad_schema(value.as_bytes()) {
-                continue;
-            }
-
             self.link_buf.push(Link::Uses(UsedLink {
                 href: self.document.join(self.arena, self.check_anchors, value),
                 path: self.document.path.clone(),
@@ -271,12 +227,3 @@ where
     fn set_force_quirks(&mut self) {}
 }
 
-#[test]
-fn test_is_bad_schema() {
-    assert!(is_bad_schema(b"//"));
-    assert!(!is_bad_schema(b""));
-    assert!(!is_bad_schema(b"http"));
-    assert!(is_bad_schema(b"http:"));
-    assert!(is_bad_schema(b"http:/"));
-    assert!(!is_bad_schema(b"http/"));
-}
