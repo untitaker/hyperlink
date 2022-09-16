@@ -85,6 +85,9 @@ enum Subcommand {
         sources_path: PathBuf,
     },
 
+    /// Dump out a list and count of _external_ links.  hyperlink does not check external links,
+    /// but this subcommand can be used to get a summary of the external links that exist in your
+    /// site.
     DumpExternalLinks {
         base_path: PathBuf,
     },
