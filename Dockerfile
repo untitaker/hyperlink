@@ -1,3 +1,5 @@
+# Originally copied from lychee's dockerfile at
+# https://github.com/lycheeverse/lychee/blob/b2a22444707c17b9c1f56e191a66e52057b4c97a/Dockerfile
 FROM rust:1.63-alpine3.16 as builder
 
 RUN apk add --no-cache musl-dev
@@ -17,7 +19,7 @@ RUN cargo build --release && rm -rf src/
 RUN strip target/release/hyperlink
 
 # Copy the source code and run the build again.
-# This should only compile lychee itself as the
+# This should only compile hyperlink itself as the
 # dependencies were already built above.
 COPY . ./
 RUN rm ./target/release/deps/hyperlink* && cargo build --release
