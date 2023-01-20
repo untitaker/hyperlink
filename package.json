@@ -2,7 +2,7 @@
   "name": "@untitaker/hyperlink",
   "description": "Very fast link checker for CI.",
   "license": "MIT",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "bin": {
     "hyperlink": "scripts/hyperlink-bin"
   },
