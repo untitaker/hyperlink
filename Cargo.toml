@@ -28,3 +28,8 @@ assert_cmd = "2.0.2"
 assert_fs = "1.0.2"
 predicates = "1.0.8"
 pretty_assertions = "1.0.0"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = 'abort'
