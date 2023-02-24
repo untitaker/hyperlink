@@ -120,7 +120,7 @@ fn main() -> Result<(), Error> {
             // Invalid invocation. Ultra hack to show help if no arguments are provided. Structopt
             // does not seem to have a functional way to require either an argument or a
             // subcommand. required_if etc don't actually work.
-            let help_message = Cli::try_parse_from(&["hyperlink", "--help"])
+            let help_message = Cli::try_parse_from(["hyperlink", "--help"])
                 .map(|_| ())
                 .unwrap_err();
             help_message.print()?;
@@ -238,21 +238,21 @@ where
 
         if github_actions {
             if !bad_links.is_empty() {
-                print_github_actions_href_list("bad links", &*filepath, &bad_links)?;
+                print_github_actions_href_list("bad links", &filepath, &bad_links)?;
             }
 
             if !bad_anchors.is_empty() {
-                print_github_actions_href_list("bad anchors", &*filepath, &bad_anchors)?;
+                print_github_actions_href_list("bad anchors", &filepath, &bad_anchors)?;
             }
         }
 
         println!();
     }
 
-    println!("Found {} bad links", bad_links_count);
+    println!("Found {bad_links_count} bad links");
 
     if check_anchors {
-        println!("Found {} bad anchors", bad_anchors_count);
+        println!("Found {bad_anchors_count} bad anchors");
     }
 
     // We're about to exit the program and leaking the memory is faster than running drop
@@ -271,9 +271,9 @@ where
 
 fn print_href_error(message: &'static str, href: &str, lineno: Option<usize>) {
     if let Some(lineno) = lineno {
-        println!("  {} /{} at line {}", message, href, lineno);
+        println!("  {message} /{href} at line {lineno}");
     } else {
-        println!("  {} /{}", message, href);
+        println!("  {message} /{href}");
     }
 }
 
@@ -334,9 +334,9 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
 
     for (paragraph, lineno) in paragraphs {
         if let Some(lineno) = lineno {
-            println!("{}: {}", lineno, paragraph);
+            println!("{lineno}: {paragraph}");
         } else {
-            println!("{}", paragraph);
+            println!("{paragraph}");
         }
     }
 
@@ -352,7 +352,7 @@ struct HtmlResult<C> {
 fn walk_files(
     base_path: &Path,
 ) -> Result<impl ParallelIterator<Item = jwalk::DirEntry<((), ())>>, Error> {
-    let entries = WalkDir::new(&base_path)
+    let entries = WalkDir::new(base_path)
         .sort(true) // helps branch predictor (?)
         .process_read_dir(|_, _, _, children| {
             children.retain(|dir_entry_result| {
@@ -550,17 +550,11 @@ fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(),
         }
     }
 
-    println!("{} total links", total_links);
-    println!("{} links outside of paragraphs", link_no_paragraph);
-    println!(
-        "{} links with multiple potential sources",
-        link_multiple_sources
-    );
-    println!("{} links with no sources", link_no_source);
-    println!(
-        "{} links with one potential source (perfect match)",
-        link_single_source
-    );
+    println!("{total_links} total links");
+    println!("{link_no_paragraph} links outside of paragraphs");
+    println!("{link_multiple_sources} links with multiple potential sources");
+    println!("{link_no_source} links with no sources");
+    println!("{link_single_source} links with one potential source (perfect match)");
 
     Ok(())
 }

@@ -241,8 +241,8 @@ impl Document {
     ) -> Href<'b> {
         let qs_start = rel_href
             .find(&['?', '#'][..])
-            .unwrap_or_else(|| rel_href.len());
-        let anchor_start = rel_href.find('#').unwrap_or_else(|| rel_href.len());
+            .unwrap_or(rel_href.len());
+        let anchor_start = rel_href.find('#').unwrap_or(rel_href.len());
 
         let mut href = BumpString::from_str_in(&self.href, arena);
         if self.is_index_html {
@@ -254,7 +254,7 @@ impl Document {
         if preserve_anchor {
             let anchor = &rel_href[anchor_start..];
             if anchor.len() > 1 {
-                href.push_str(&try_percent_decode(&anchor));
+                href.push_str(&try_percent_decode(anchor));
             }
         }
 

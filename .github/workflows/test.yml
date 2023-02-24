@@ -26,8 +26,8 @@ jobs:
             os: windows-latest
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
         if: runner.os != 'macOS'
         with:
           path: |

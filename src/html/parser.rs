@@ -32,7 +32,7 @@ fn is_bad_schema(url: &[u8]) -> bool {
     // check if string before first : is a valid URL scheme
     // see RFC 2396, Appendix A for what constitutes a valid scheme
 
-    if !matches!(first_char, b'a'..=b'z' | b'A'..=b'Z') {
+    if !first_char.is_ascii_alphabetic() {
         return false;
     }
 
