@@ -24,6 +24,7 @@ percent-encoding = "2.1.0"
 clap = { version = "3.0.4", features = ["std", "derive"], default_features = false }
 memento = { git = "https://github.com/untitaker/memento", version = "0.1.0" }
 lazy_static = "1.4.0"
+dashmap = "5.4.0"
 
 [dev-dependencies]
 assert_cmd = "2.0.2"

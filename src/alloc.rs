@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Mutex;
+use std::sync::atomic::{Ordering, AtomicUsize};
+
+use memento::Error;
 
 #[derive(Default)]
 struct Stat {
@@ -33,6 +36,10 @@ impl Stat {
     }
 }
 
+static ERROR_TRACKED_POINTERS_CONTENTION: AtomicUsize = AtomicUsize::new(0);
+static ERROR_CURRENT_USECASE_CONTENTION_REF_CELL: AtomicUsize = AtomicUsize::new(0);
+static ERROR_CURRENT_USECASE_CONTENTION_THREAD_LOCAL: AtomicUsize = AtomicUsize::new(0);
+
 lazy_static::lazy_static! {
     static ref RESULTS: Mutex<BTreeMap<Allocation, Stat>> = Mutex::new(BTreeMap::new());
 }
@@ -56,6 +63,14 @@ memento::usecase! {
                 map.entry(*self).or_insert_with(Default::default).record(-(size as isize));
             }
         }
+
+        fn on_error(code: Error, _size: Option<usize>) {
+            match code {
+                Error::TrackedPointersContention => &ERROR_TRACKED_POINTERS_CONTENTION,
+                Error::CurrentUsecaseContentionRefCell => &ERROR_CURRENT_USECASE_CONTENTION_REF_CELL,
+                Error::CurrentUsecaseContentionThreadLocal => &ERROR_CURRENT_USECASE_CONTENTION_THREAD_LOCAL,
+            }.fetch_add(1, Ordering::Relaxed);
+        }
     }
 }
 
@@ -71,6 +86,9 @@ impl fmt::Display for Allocation {
 
 pub fn print_alloc_stats() {
     println!("allocation stats:");
+    println!("  {} failures to acquire pointer map", ERROR_TRACKED_POINTERS_CONTENTION.load(Ordering::Relaxed));
+    println!("  {} failures to switch usecases (ref cell)", ERROR_CURRENT_USECASE_CONTENTION_REF_CELL.load(Ordering::Relaxed));
+    println!("  {} failures to switch usecases (thread local)", ERROR_CURRENT_USECASE_CONTENTION_THREAD_LOCAL.load(Ordering::Relaxed));
     let guard = RESULTS.lock().unwrap();
     for (usecase, size) in guard.iter() {
         println!("  {}: {}", usecase, size);
