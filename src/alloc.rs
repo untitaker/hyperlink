@@ -20,10 +20,6 @@ impl fmt::Display for Stat {
 
 impl Stat {
     fn record(&mut self, size: isize) {
-        if self.current > self.peak {
-            self.peak = self.current;
-        }
-
         self.current += size;
 
         if self.current > self.peak {
@@ -52,13 +48,13 @@ memento::usecase! {
 
     impl memento::UseCase for Allocation {
         fn on_alloc(&self, size: usize) {
-            if let Ok(mut map) = RESULTS.try_lock() {
+            if let Ok(mut map) = RESULTS.lock() {
                 map.entry(*self).or_insert_with(Default::default).record(size as isize);
             }
         }
 
         fn on_dealloc(&self, size: usize) {
-            if let Ok(mut map) = RESULTS.try_lock() {
+            if let Ok(mut map) = RESULTS.lock() {
                 map.entry(*self).or_insert_with(Default::default).record(-(size as isize));
             }
         }
