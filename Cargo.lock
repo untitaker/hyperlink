@@ -505,7 +505,6 @@ checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
 [[package]]
 name = "memento"
 version = "0.1.0"
-source = "git+https://github.com/untitaker/memento#2ef4e9799b61b1876760ccf6a908c9c27e14354f"
 dependencies = [
  "dashmap",
  "lazy_static",

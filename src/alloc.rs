@@ -36,7 +36,6 @@ impl Stat {
     }
 }
 
-static ERROR_TRACKED_POINTERS_CONTENTION: AtomicUsize = AtomicUsize::new(0);
 static ERROR_CURRENT_USECASE_CONTENTION_REF_CELL: AtomicUsize = AtomicUsize::new(0);
 static ERROR_CURRENT_USECASE_CONTENTION_THREAD_LOCAL: AtomicUsize = AtomicUsize::new(0);
 
@@ -66,7 +65,6 @@ memento::usecase! {
 
         fn on_error(code: Error, _size: Option<usize>) {
             match code {
-                Error::TrackedPointersContention => &ERROR_TRACKED_POINTERS_CONTENTION,
                 Error::CurrentUsecaseContentionRefCell => &ERROR_CURRENT_USECASE_CONTENTION_REF_CELL,
                 Error::CurrentUsecaseContentionThreadLocal => &ERROR_CURRENT_USECASE_CONTENTION_THREAD_LOCAL,
             }.fetch_add(1, Ordering::Relaxed);
@@ -86,7 +84,6 @@ impl fmt::Display for Allocation {
 
 pub fn print_alloc_stats() {
     println!("allocation stats:");
-    println!("  {} failures to acquire pointer map", ERROR_TRACKED_POINTERS_CONTENTION.load(Ordering::Relaxed));
     println!("  {} failures to switch usecases (ref cell)", ERROR_CURRENT_USECASE_CONTENTION_REF_CELL.load(Ordering::Relaxed));
     println!("  {} failures to switch usecases (thread local)", ERROR_CURRENT_USECASE_CONTENTION_THREAD_LOCAL.load(Ordering::Relaxed));
     let guard = RESULTS.lock().unwrap();
