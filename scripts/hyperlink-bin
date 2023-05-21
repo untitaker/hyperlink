@@ -1,0 +1,4 @@
+#!/bin/sh
+# install.sh is supposed to overwrite this file during installation
+echo "npm/yarn did not run postinstall script correctly. please run script/install.sh manually."
+exit 1

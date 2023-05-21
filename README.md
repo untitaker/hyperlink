@@ -3,10 +3,8 @@
 A command-line tool to find broken links in your static site.
 
 * **Fast.** [docs.sentry.io](https://github.com/getsentry/sentry-docs) produces
-  1.1 GB of HTML files. All [alternatives](#alternatives) we tried were slower
-  than `hyperlink` on this site.
-
-  `hyperlink` handles this amount of data in 4 seconds on a MacBook Pro 2018.
+  1.1 GB of HTML files. `hyperlink` handles this amount of data in 4 seconds on
+  a MacBook Pro 2018. See [Alternatives](#alternatives) for a performance comparison.
 
 * **Pay for what you need.** By default, `hyperlink` checks for hard 404s in
   internal links only. Anything beyond that is opt-in. See [Options](#options)
@@ -51,16 +49,38 @@ A command-line tool to find broken links in your static site.
 ./hyperlink public/ --sources src/
 ```
 
-Or as GitHub action:
+### GitHub action
 
 ```yaml
-- uses: untitaker/hyperlink@0.1.21
+- uses: untitaker/hyperlink@0.1.27
   with:
     args: public/ --sources src/
 ```
 
-Or build from source by [installing Rust](https://rustup.rs/) and running
-`cargo build --release`.
+### NPM
+
+```bash
+npm install -g @untitaker/hyperlink
+hyperlink public/ --sources src/
+```
+
+### Docker
+
+```bash
+docker run -v $PWD:/check ghcr.io/untitaker/hyperlink:0.1.27 /check/public/ --sources /check/src/
+
+# specific commit
+docker run -v $PWD:/check ghcr.io/untitaker/hyperlink:sha-82ca78c /check/public/ --sources /check/src
+```
+
+[See all available tags](https://github.com/untitaker/hyperlink/pkgs/container/hyperlink)
+
+### From source
+
+```bash
+cargo install hyperlink  # latest stable release
+cargo install --git https://github.com/untitaker/hyperlink  # latest git SHA
+```
 
 ## Options
 
@@ -115,8 +135,8 @@ and `--github-actions` feature.
 
 * [lychee](https://github.com/lycheeverse/lychee), like `hyperlink`, is a great
   choice for obscenely large static sites. Additionally it can check
-  external/outbound links. An invocation of `lychee --offline -b . '**/*.htm*'
-  -n` is more or less equivalent to `hyperlink .`.
+  external/outbound links. An invocation of `lychee --offline public/` is more or
+  less equivalent to `hyperlink public/`.
 
 * [liche](https://github.com/raviqqe/liche) seems to be fairly fast, but is
   unmaintained.

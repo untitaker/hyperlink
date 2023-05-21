@@ -254,7 +254,7 @@ impl Document {
         if preserve_anchor {
             let anchor = &rel_href[anchor_start..];
             if anchor.len() > 1 {
-                href.push_str(anchor);
+                href.push_str(&try_percent_decode(&anchor));
             }
         }
 
@@ -373,7 +373,7 @@ fn test_html_parsing_malformed_script() {
 
     assert_eq!(
         links.collect::<Vec<_>>(),
-        &[used_link("foo"), used_link("wut"), used_link("bar")]
+        &[used_link("foo"), used_link("bar")]
     );
 }
 
@@ -517,5 +517,13 @@ fn test_document_join_bare_html() {
     assert_eq!(
         doc.join(&arena, true, "/platforms/ruby?bar=1#foo"),
         Href("platforms/ruby#foo".into())
+    );
+    assert_eq!(
+        doc.join(&arena, false, "/locations/troms%C3%B8"),
+        Href("locations/tromsø".into())
+    );
+    assert_eq!(
+        doc.join(&arena, true, "/locations/oslo#gr%C3%BCnerl%C3%B8kka"),
+        Href("locations/oslo#grünerløkka".into())
     );
 }
