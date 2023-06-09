@@ -94,12 +94,12 @@ fn main() -> Result<(), Error> {
         subcommand,
     } = Cli::parse();
 
-    if let Some(n) = threads {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(n)
-            .build_global()
-            .unwrap();
-    }
+    rayon::ThreadPoolBuilder::new()
+        // most of the work we do is kind of I/O bound. rayon assumes CPU-heavy workload. we could
+        // look into tokio-uring at some point, but it seems like a hassle wrt ownership
+        .num_threads(threads.unwrap_or_else(|| 4 * num_cpus::get()))
+        .build_global()
+        .unwrap();
 
     match subcommand {
         Some(Subcommand::DumpParagraphs { file }) => {

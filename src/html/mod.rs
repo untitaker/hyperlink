@@ -239,9 +239,7 @@ impl Document {
         preserve_anchor: bool,
         rel_href: &str,
     ) -> Href<'b> {
-        let qs_start = rel_href
-            .find(&['?', '#'][..])
-            .unwrap_or(rel_href.len());
+        let qs_start = rel_href.find(&['?', '#'][..]).unwrap_or(rel_href.len());
         let anchor_start = rel_href.find('#').unwrap_or(rel_href.len());
 
         let mut href = BumpString::from_str_in(&self.href, arena);
