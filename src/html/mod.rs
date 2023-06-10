@@ -319,7 +319,7 @@ fn test_document_href() {
         Path::new("public/platforms/python/troubleshooting/index.html"),
     );
 
-    assert_eq!(doc.href(), Href("platforms/python/troubleshooting".into()));
+    assert_eq!(doc.href(), Href("platforms/python/troubleshooting"));
 
     let doc = Document::new(
         Path::new("public/"),
@@ -328,7 +328,7 @@ fn test_document_href() {
 
     assert_eq!(
         doc.href(),
-        Href("platforms/python/troubleshooting.html".into())
+        Href("platforms/python/troubleshooting.html")
     );
 }
 
@@ -363,7 +363,7 @@ fn test_html_parsing_malformed_script() {
 
     let used_link = |x: &'static str| {
         Link::Uses(UsedLink {
-            href: Href(x.into()),
+            href: Href(x),
             path: doc.path.clone(),
             paragraph: None,
         })
@@ -428,7 +428,7 @@ fn test_document_links() {
 
     let used_link = |x: &'static str| {
         Link::Uses(UsedLink {
-            href: Href(x.into()),
+            href: Href(x),
             path: doc.path.clone(),
             paragraph: None,
         })
@@ -465,24 +465,24 @@ fn test_document_join_index_html() {
 
     assert_eq!(
         doc.join(&arena, false, "../../ruby#foo"),
-        Href("platforms/ruby".into())
+        Href("platforms/ruby")
     );
     assert_eq!(
         doc.join(&arena, true, "../../ruby#foo"),
-        Href("platforms/ruby#foo".into())
+        Href("platforms/ruby#foo")
     );
     assert_eq!(
         doc.join(&arena, true, "../../ruby?bar=1#foo"),
-        Href("platforms/ruby#foo".into())
+        Href("platforms/ruby#foo")
     );
 
     assert_eq!(
         doc.join(&arena, false, "/platforms/ruby"),
-        Href("platforms/ruby".into())
+        Href("platforms/ruby")
     );
     assert_eq!(
         doc.join(&arena, true, "/platforms/ruby?bar=1#foo"),
-        Href("platforms/ruby#foo".into())
+        Href("platforms/ruby#foo")
     );
 }
 
@@ -497,31 +497,31 @@ fn test_document_join_bare_html() {
 
     assert_eq!(
         doc.join(&arena, false, "../ruby#foo"),
-        Href("platforms/ruby".into())
+        Href("platforms/ruby")
     );
     assert_eq!(
         doc.join(&arena, true, "../ruby#foo"),
-        Href("platforms/ruby#foo".into())
+        Href("platforms/ruby#foo")
     );
     assert_eq!(
         doc.join(&arena, true, "../ruby?bar=1#foo"),
-        Href("platforms/ruby#foo".into())
+        Href("platforms/ruby#foo")
     );
 
     assert_eq!(
         doc.join(&arena, false, "/platforms/ruby"),
-        Href("platforms/ruby".into())
+        Href("platforms/ruby")
     );
     assert_eq!(
         doc.join(&arena, true, "/platforms/ruby?bar=1#foo"),
-        Href("platforms/ruby#foo".into())
+        Href("platforms/ruby#foo")
     );
     assert_eq!(
         doc.join(&arena, false, "/locations/troms%C3%B8"),
-        Href("locations/tromsø".into())
+        Href("locations/tromsø")
     );
     assert_eq!(
         doc.join(&arena, true, "/locations/oslo#gr%C3%BCnerl%C3%B8kka"),
-        Href("locations/oslo#grünerløkka".into())
+        Href("locations/oslo#grünerløkka")
     );
 }
