@@ -1,3 +1,4 @@
+#![allow(clippy::manual_flatten)]
 mod collector;
 mod html;
 mod markdown;
@@ -10,7 +11,7 @@ use std::process;
 
 use anyhow::{anyhow, Context, Error};
 use clap::Parser;
-use jwalk::WalkDir;
+use jwalk::WalkDirGeneric;
 use markdown::DocumentSource;
 use rayon::prelude::*;
 
@@ -351,44 +352,31 @@ struct HtmlResult<C> {
 
 fn walk_files(
     base_path: &Path,
-) -> Result<impl ParallelIterator<Item = jwalk::DirEntry<((), ())>>, Error> {
-    let entries = WalkDir::new(base_path)
+) -> Result<impl ParallelIterator<Item = jwalk::DirEntry<((), bool)>>, Error> {
+    let entries = WalkDirGeneric::<((), bool)>::new(base_path)
         .sort(true) // helps branch predictor (?)
+        .skip_hidden(false)
         .process_read_dir(|_, _, _, children| {
-            children.retain(|dir_entry_result| {
-                let entry = match dir_entry_result.as_ref() {
-                    Ok(x) => x,
-                    Err(_) => return true,
-                };
-
-                let file_type = entry.file_type();
-
-                if file_type.is_dir() {
-                    // need to retain, otherwise jwalk won't recurse
-                    return true;
+            for dir_entry_result in children.iter_mut() {
+                if let Ok(dir_entry) = dir_entry_result {
+                    dir_entry.client_state = dir_entry.file_type().is_file();
                 }
-                if file_type.is_symlink() {
-                    return false;
-                }
-
-                if !file_type.is_file() {
-                    return false;
-                }
-
-                true
-            });
+            }
         })
         .into_iter()
-        .filter_map(|entry| {
-            let entry = match entry {
-                Ok(x) => x,
-                Err(e) => return Some(Err(e)),
-            };
+        .filter_map(|entry_result| {
+            if let Ok(entry) = entry_result {
+                if let Some(err) = entry.read_children_error {
+                    // https://github.com/Byron/jwalk/issues/40
+                    return Some(Err(err));
+                }
 
-            if entry.file_type().is_dir() {
-                None
-            } else {
+                if !entry.client_state {
+                    return None;
+                }
                 Some(Ok(entry))
+            } else {
+                Some(entry_result)
             }
         })
         // XXX: cannot use par_bridge because of https://github.com/rayon-rs/rayon/issues/690
