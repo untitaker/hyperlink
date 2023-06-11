@@ -1,6 +1,6 @@
 [package]
 name = "hyperlink"
-version = "0.1.28"
+version = "0.1.29"
 authors = ["Markus Unterwaditzer <markus-honeypot@unterwaditzer.net>"]
 description = "Very fast link checker for CI."
 homepage = "https://github.com/untitaker/hyperlink"
