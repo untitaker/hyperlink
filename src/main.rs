@@ -353,7 +353,7 @@ struct HtmlResult<C> {
 fn walk_files(
     base_path: &Path,
 ) -> impl ParallelIterator<Item = Result<jwalk::DirEntry<((), bool)>, jwalk::Error>> {
-    let entries = WalkDirGeneric::<((), bool)>::new(base_path)
+    WalkDirGeneric::<((), bool)>::new(base_path)
         .sort(true) // helps branch predictor (?)
         .skip_hidden(false)
         .process_read_dir(|_, _, _, children| {
@@ -364,6 +364,7 @@ fn walk_files(
             }
         })
         .into_iter()
+        .par_bridge()
         .filter_map(|entry_result| {
             if let Ok(entry) = entry_result {
                 if let Some(err) = entry.read_children_error {
@@ -378,9 +379,7 @@ fn walk_files(
             } else {
                 Some(entry_result)
             }
-        });
-
-    entries.par_bridge()
+        })
 }
 
 fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
