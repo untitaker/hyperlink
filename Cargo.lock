@@ -436,9 +436,9 @@ checksum = "c9447923c57a8a2d5c1b0875cdf96a6324275df728b498f2ede0e5cbde088a15"
 
 [[package]]
 name = "jwalk"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "172752e853a067cbce46427de8470ddf308af7fd8ceaf9b682ef31a5021b6bb9"
+checksum = "90ab39147558655c693929741419efe226be09f24710a6f67dbea2828466dded"
 dependencies = [
  "crossbeam",
  "rayon",
@@ -710,14 +710,13 @@ dependencies = [
 
 [[package]]
 name = "rayon-core"
-version = "1.9.1"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d78120e2c850279833f1dd3582f730c4ab53ed95aeaaaa862a2a5c71b1656d8e"
+checksum = "4b8f95bd6966f5c87776639160a66bd8ab9895d9d4ab01ddba9fc60661aebe8d"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-deque",
  "crossbeam-utils",
- "lazy_static",
  "num_cpus",
 ]
 

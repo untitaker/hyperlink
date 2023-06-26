@@ -326,10 +326,7 @@ fn test_document_href() {
         Path::new("public/platforms/python/troubleshooting.html"),
     );
 
-    assert_eq!(
-        doc.href(),
-        Href("platforms/python/troubleshooting.html")
-    );
+    assert_eq!(doc.href(), Href("platforms/python/troubleshooting.html"));
 }
 
 #[test]

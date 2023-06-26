@@ -352,8 +352,8 @@ struct HtmlResult<C> {
 
 fn walk_files(
     base_path: &Path,
-) -> Result<impl ParallelIterator<Item = jwalk::DirEntry<((), bool)>>, Error> {
-    let entries = WalkDirGeneric::<((), bool)>::new(base_path)
+) -> impl ParallelIterator<Item = Result<jwalk::DirEntry<((), bool)>, jwalk::Error>> {
+    WalkDirGeneric::<((), bool)>::new(base_path)
         .sort(true) // helps branch predictor (?)
         .skip_hidden(false)
         .process_read_dir(|_, _, _, children| {
@@ -364,6 +364,7 @@ fn walk_files(
             }
         })
         .into_iter()
+        .par_bridge()
         .filter_map(|entry_result| {
             if let Ok(entry) = entry_result {
                 if let Some(err) = entry.read_children_error {
@@ -379,13 +380,6 @@ fn walk_files(
                 Some(entry_result)
             }
         })
-        // XXX: cannot use par_bridge because of https://github.com/rayon-rs/rayon/issues/690
-        .collect::<Result<Vec<_>, _>>()?;
-
-    // Minimize amount of LinkCollector instances created. This impacts parallelism but
-    // `LinkCollector::merge` is rather slow.
-    let min_len = entries.len() / rayon::current_num_threads();
-    Ok(entries.into_par_iter().with_min_len(min_len))
 }
 
 fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
@@ -393,10 +387,11 @@ fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
     check_anchors: bool,
     get_paragraphs: bool,
 ) -> Result<HtmlResult<C>, Error> {
-    let result: Result<_, Error> = walk_files(base_path)?
+    let result: Result<_, Error> = walk_files(base_path)
         .try_fold(
             || (DocumentBuffers::default(), C::new(), 0, 0),
             |(mut doc_buf, mut collector, mut documents_count, mut file_count), entry| {
+                let entry = entry?;
                 let path = entry.path();
                 let document = Document::new(base_path, &path);
 
@@ -458,8 +453,9 @@ type MarkdownResult<P> = BTreeMap<P, Vec<(DocumentSource, usize)>>;
 fn extract_markdown_paragraphs<P: ParagraphWalker>(
     sources_path: &Path,
 ) -> Result<MarkdownResult<P::Paragraph>, Error> {
-    let results: Vec<Result<_, Error>> = walk_files(sources_path)?
+    let results: Vec<Result<_, Error>> = walk_files(sources_path)
         .try_fold(Vec::new, |mut paragraphs, entry| {
+            let entry = entry?;
             let source = DocumentSource::new(entry.path());
 
             if !source
