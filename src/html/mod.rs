@@ -170,13 +170,25 @@ impl<'a, P> Link<'a, P> {
     }
 }
 
+const BUF_SIZE: usize = 1024 * 1024;
+
 /// This struct is initialized once per "batch of documents" that will be processed on a single
 /// worker thread (as determined by rayon). It pays off to do as much heap allocation as possible
 /// here once instead of in Document::links.
-#[derive(Default)]
 pub struct DocumentBuffers {
     arena: bumpalo::Bump,
+    html_read_buffer: Box<[u8; BUF_SIZE]>,
     parser_buffers: parser::ParserBuffers,
+}
+
+impl Default for DocumentBuffers {
+    fn default() -> Self {
+        DocumentBuffers {
+            arena: Default::default(),
+            html_read_buffer: Box::new([0; BUF_SIZE]),
+            parser_buffers: Default::default(),
+        }
+    }
 }
 
 impl DocumentBuffers {
@@ -301,7 +313,8 @@ impl Document {
                 current_tag_is_closing: false,
                 check_anchors,
             };
-            let reader = Tokenizer::new_with_emitter(IoReader::new(read), emitter);
+            let ioreader = IoReader::new_with_buffer(read, doc_buf.html_read_buffer.as_mut());
+            let reader = Tokenizer::new_with_emitter(ioreader, emitter);
 
             for error in reader {
                 error?;
