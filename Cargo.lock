@@ -363,14 +363,16 @@ dependencies = [
 
 [[package]]
 name = "html5gum"
-version = "0.5.4"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a133aac7511abbaa924b45436d4f8684c4e1adbda73b3c5716d9e52bd9f45e45"
 dependencies = [
  "jetscii",
 ]
 
 [[package]]
 name = "hyperlink"
-version = "0.1.29"
+version = "0.1.30"
 dependencies = [
  "anyhow",
  "assert_cmd",
