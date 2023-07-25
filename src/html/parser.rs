@@ -260,6 +260,10 @@ where
     fn emit_current_doctype(&mut self) {}
     fn emit_eof(&mut self) {}
     fn emit_error(&mut self, _: Error) {}
+    #[inline]
+    fn should_emit_errors() -> bool {
+        false
+    }
     fn init_comment(&mut self) {}
     fn init_doctype(&mut self) {}
     fn push_comment(&mut self, _: &[u8]) {}
