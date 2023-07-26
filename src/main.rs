@@ -4,6 +4,7 @@ mod html;
 mod markdown;
 mod paragraph;
 
+use std::cmp;
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
 use std::path::{Path, PathBuf};
@@ -98,7 +99,9 @@ fn main() -> Result<(), Error> {
     rayon::ThreadPoolBuilder::new()
         // most of the work we do is kind of I/O bound. rayon assumes CPU-heavy workload. we could
         // look into tokio-uring at some point, but it seems like a hassle wrt ownership
-        .num_threads(threads.unwrap_or_else(|| 4 * num_cpus::get()))
+        //
+        // hyperlink seems to deadlock on less than 1 thread.
+        .num_threads(cmp::max(2, threads.unwrap_or_else(|| 4 * num_cpus::get())))
         .build_global()
         .unwrap();
 
