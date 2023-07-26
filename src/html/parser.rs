@@ -261,7 +261,7 @@ where
     fn emit_eof(&mut self) {}
     fn emit_error(&mut self, _: Error) {}
     #[inline]
-    fn should_emit_errors() -> bool {
+    fn should_emit_errors(&mut self) -> bool {
         false
     }
     fn init_comment(&mut self) {}
