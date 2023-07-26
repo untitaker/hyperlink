@@ -1,15 +1,8 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use patricia_tree::PatriciaMap;
-
 use crate::html::{Href, Link, UsedLink};
-
-impl<'a> AsRef<[u8]> for Href<'a> {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-}
 
 pub trait LinkCollector<P: Send>: Send {
     fn new() -> Self;
@@ -80,14 +73,14 @@ impl<P: Copy> LinkState<P> {
 
 /// Link collector used for actual link checking. Keeps track of broken links only.
 pub struct BrokenLinkCollector<P> {
-    links: PatriciaMap<LinkState<P>>,
+    links: BTreeMap<String, LinkState<P>>,
     used_link_count: usize,
 }
 
 impl<P: Send + Copy> LinkCollector<P> for BrokenLinkCollector<P> {
     fn new() -> Self {
         BrokenLinkCollector {
-            links: PatriciaMap::new(),
+            links: BTreeMap::new(),
             used_link_count: 0,
         }
     }
@@ -96,16 +89,18 @@ impl<P: Send + Copy> LinkCollector<P> for BrokenLinkCollector<P> {
         match link {
             Link::Uses(used_link) => {
                 self.used_link_count += 1;
-                if let Some(state) = self.links.get_mut(&used_link.href) {
-                    state.add_usage(&used_link);
-                } else {
-                    let mut state = LinkState::Undefined(Vec::new());
-                    state.add_usage(&used_link);
-                    self.links.insert(used_link.href, state);
-                }
+                self.links
+                    .entry(used_link.href.0.to_owned())
+                    .and_modify(|state| state.add_usage(&used_link))
+                    .or_insert_with(|| {
+                        let mut state = LinkState::Undefined(Vec::new());
+                        state.add_usage(&used_link);
+                        state
+                    });
             }
             Link::Defines(defined_link) => {
-                self.links.insert(defined_link.href, LinkState::Defined);
+                self.links
+                    .insert(defined_link.href.0.to_owned(), LinkState::Defined);
             }
         }
     }
@@ -135,10 +130,9 @@ impl<P: Copy + PartialEq> BrokenLinkCollector<P> {
 
         for (href, state) in self.links.iter() {
             if let LinkState::Undefined(links) = state {
-                let href = unsafe { String::from_utf8_unchecked(href) };
                 let hard_404 = if check_anchors {
                     !matches!(
-                        self.links.get(&Href(&href).without_anchor()),
+                        self.links.get(Href(&href).without_anchor().0),
                         Some(&LinkState::Defined)
                     )
                 } else {
