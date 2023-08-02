@@ -360,7 +360,7 @@ fn test_html_parsing_malformed_script() {
     let mut doc_buf = DocumentBuffers::default();
 
     let links = doc
-        .links_from_read::<_, ParagraphHasher>(&mut doc_buf, html.as_bytes(), false, false)
+        .links_from_read::<_, ParagraphHasher>(&mut doc_buf, html.as_bytes(), false)
         .unwrap();
 
     let used_link = |x: &'static str| {
@@ -423,7 +423,6 @@ fn test_document_links() {
     />
     """#
         .as_bytes(),
-        false,
         false,
     )
     .unwrap();
