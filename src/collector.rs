@@ -132,7 +132,7 @@ impl<P: Copy + PartialEq> BrokenLinkCollector<P> {
             if let LinkState::Undefined(links) = state {
                 let hard_404 = if check_anchors {
                     !matches!(
-                        self.links.get(Href(&href).without_anchor().0),
+                        self.links.get(Href(href).without_anchor().0),
                         Some(&LinkState::Defined)
                     )
                 } else {
