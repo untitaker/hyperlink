@@ -150,11 +150,7 @@ where
 {
     println!("Reading files");
 
-    let html_result = extract_html_links::<BrokenLinkCollector<_>, P>(
-        &base_path,
-        check_anchors,
-        sources_path.is_some(),
-    )?;
+    let html_result = extract_html_links::<BrokenLinkCollector<_>, P>(&base_path, check_anchors)?;
 
     let used_links_len = html_result.collector.used_links_count();
     println!(
@@ -329,7 +325,7 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
         Some(x) if HTML_FILES.contains(&x) => {
             let document = Document::new(Path::new(""), &path);
             document
-                .links::<DebugParagraphWalker<ParagraphHasher>>(&mut doc_buf, false, true)?
+                .links::<DebugParagraphWalker<ParagraphHasher>>(&mut doc_buf, false)?
                 .filter_map(|link| Some((link.into_paragraph()?, None)))
                 .collect()
         }
@@ -388,7 +384,6 @@ fn walk_files(
 fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
     base_path: &Path,
     check_anchors: bool,
-    get_paragraphs: bool,
 ) -> Result<HtmlResult<C>, Error> {
     let result: Result<_, Error> = walk_files(base_path)
         .try_fold(
@@ -413,7 +408,7 @@ fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
                 }
 
                 for link in document
-                    .links::<P>(&mut doc_buf, check_anchors, get_paragraphs)
+                    .links::<P>(&mut doc_buf, check_anchors)
                     .with_context(|| format!("Failed to read file {}", document.path.display()))?
                 {
                     collector.ingest(link);
@@ -497,7 +492,7 @@ fn extract_markdown_paragraphs<P: ParagraphWalker>(
 fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(), Error> {
     println!("Reading files");
     let html_result =
-        extract_html_links::<UsedLinkCollector<_>, ParagraphHasher>(&base_path, true, true)?;
+        extract_html_links::<UsedLinkCollector<_>, ParagraphHasher>(&base_path, true)?;
 
     println!("Reading source files");
     let paragraps_to_sourcefile = extract_markdown_paragraphs::<ParagraphHasher>(&sources_path)?;

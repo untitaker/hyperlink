@@ -76,7 +76,6 @@ pub struct HyperlinkEmitter<'a, 'l, 'd, P: ParagraphWalker> {
     pub link_buf: &'d mut BumpVec<'a, Link<'l, P::Paragraph>>,
     pub in_paragraph: bool,
     pub last_paragraph_i: usize,
-    pub get_paragraphs: bool,
     pub buffers: &'d mut ParserBuffers,
     pub current_tag_is_closing: bool,
     pub check_anchors: bool,
@@ -179,7 +178,7 @@ where
     }
 
     fn emit_string(&mut self, c: &[u8]) {
-        if self.get_paragraphs && self.in_paragraph {
+        if !P::is_noop() && self.in_paragraph {
             self.paragraph_walker.update(c);
         }
     }
@@ -198,17 +197,20 @@ where
         self.flush_old_attribute();
 
         self.buffers.last_start_tag.clear();
+
+        let is_paragraph_tag = !P::is_noop() && is_paragraph_tag(&self.buffers.current_tag_name);
+
         if !self.current_tag_is_closing {
             self.buffers
                 .last_start_tag
                 .extend(&self.buffers.current_tag_name);
 
-            if is_paragraph_tag(&self.buffers.current_tag_name) {
+            if is_paragraph_tag {
                 self.in_paragraph = true;
                 self.last_paragraph_i = self.link_buf.len();
                 self.paragraph_walker.finish_paragraph();
             }
-        } else if is_paragraph_tag(&self.buffers.current_tag_name) {
+        } else if is_paragraph_tag {
             let paragraph = self.paragraph_walker.finish_paragraph();
             if self.in_paragraph {
                 for link in &mut self.link_buf[self.last_paragraph_i..] {
@@ -229,7 +231,7 @@ where
     }
 
     fn set_self_closing(&mut self) {
-        if is_paragraph_tag(&self.buffers.current_tag_name) {
+        if !P::is_noop() && is_paragraph_tag(&self.buffers.current_tag_name) {
             self.in_paragraph = false;
         }
     }

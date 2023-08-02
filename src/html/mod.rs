@@ -275,17 +275,11 @@ impl Document {
         &self,
         doc_buf: &'b mut DocumentBuffers,
         check_anchors: bool,
-        get_paragraphs: bool,
     ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
     where
         'b: 'l,
     {
-        self.links_from_read::<_, P>(
-            doc_buf,
-            fs::File::open(&*self.path)?,
-            check_anchors,
-            get_paragraphs,
-        )
+        self.links_from_read::<_, P>(doc_buf, fs::File::open(&*self.path)?, check_anchors)
     }
 
     fn links_from_read<'b, 'l, R: Read, P: ParagraphWalker>(
@@ -293,7 +287,6 @@ impl Document {
         doc_buf: &'b mut DocumentBuffers,
         read: R,
         check_anchors: bool,
-        get_paragraphs: bool,
     ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
     where
         'b: 'l,
@@ -308,7 +301,6 @@ impl Document {
                 link_buf: &mut link_buf,
                 in_paragraph: false,
                 last_paragraph_i: 0,
-                get_paragraphs,
                 buffers: &mut doc_buf.parser_buffers,
                 current_tag_is_closing: false,
                 check_anchors,
