@@ -78,8 +78,8 @@ docker run -v $PWD:/check ghcr.io/untitaker/hyperlink:sha-82ca78c /check/public/
 ### From source
 
 ```bash
-cargo install hyperlink  # latest stable release
-cargo install --git https://github.com/untitaker/hyperlink  # latest git SHA
+cargo install --locked hyperlink  # latest stable release
+cargo install --locked --git https://github.com/untitaker/hyperlink  # latest git SHA
 ```
 
 ## Options
