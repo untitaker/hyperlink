@@ -82,7 +82,6 @@ pub struct LocalLinksOnly<C> {
 
 pub fn canonicalize_local_link<'a, P>(arena: &Bump, mut link: Link<'a, P>) -> Option<Link<'a, P>> {
     if let Link::Uses(ref mut used_link) = link {
-        dbg!(&used_link.href);
         if is_external_link(&used_link.href.0.as_bytes()) {
             return None;
         }
