@@ -9,18 +9,20 @@ use std::str;
 use std::sync::Arc;
 
 use anyhow::Error;
+use bumpalo::Bump;
 use bumpalo::collections::String as BumpString;
 use bumpalo::collections::Vec as BumpVec;
 use html5gum::{IoReader, Tokenizer};
 
 use crate::paragraph::ParagraphWalker;
+use crate::urls::is_external_link;
 
 #[cfg(test)]
 use pretty_assertions::assert_eq;
 
 #[inline]
 pub fn push_and_canonicalize(base: &mut BumpString, path: &str) {
-    if is_external_url(path) {
+    if is_external_link(path.as_bytes()) {
         base.clear();
         base.push_str(path);
         return;
@@ -150,23 +152,6 @@ mod test_push_and_canonicalize {
         assert_eq!(base, "http://foo.com");
     }
 
-}
-
-#[inline]
-pub fn is_external_url(url: &str) -> bool {
-    url.starts_with("//") || url.starts_with("http://") || url.starts_with("https://")
-}
-
-#[test]
-fn test_is_external() {
-    assert!(is_external_url("http://foo.com"));
-    assert!(is_external_url("https://foo.com"));
-    assert!(is_external_url("//foo.com"));
-    assert!(!is_external_url("foo.com"));
-    assert!(!is_external_url("https:/foo.com"));
-    assert!(!is_external_url("/foo"));
-    assert!(!is_external_url("hello/http://foo.com"));
-    assert!(!is_external_url("/foo/bar//baz"));
 }
 
 #[inline]
@@ -434,6 +419,7 @@ fn test_html_parsing_malformed_script() {
 #[test]
 fn test_document_links() {
     use crate::paragraph::ParagraphHasher;
+    use crate::collector::canonicalize_local_link;
 
     let doc = Document::new(
         Path::new("public/"),
@@ -489,8 +475,10 @@ fn test_document_links() {
         })
     };
 
+    let arena = Bump::new();
+
     assert_eq!(
-        &links.collect::<Vec<_>>(),
+        &links.filter_map(|x| canonicalize_local_link(&arena, x)).collect::<Vec<_>>(),
         &[
             used_link("platforms/ruby"),
             used_link("platforms/perl"),

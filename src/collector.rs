@@ -6,6 +6,7 @@ use bumpalo::Bump;
 use bumpalo::collections::String as BumpString;
 
 use crate::html::{Href, Link, push_and_canonicalize, try_percent_decode, UsedLink};
+use crate::urls::is_external_link;
 
 pub trait LinkCollector<P>: Send {
     fn new() -> Self;
@@ -79,28 +80,36 @@ pub struct LocalLinksOnly<C> {
     arena: Bump,
 }
 
+pub fn canonicalize_local_link<'a, P>(arena: &Bump, mut link: Link<'a, P>) -> Option<Link<'a, P>> {
+    if let Link::Uses(ref mut used_link) = link {
+        dbg!(&used_link.href);
+        if is_external_link(&used_link.href.0.as_bytes()) {
+            return None;
+        }
+
+        let qs_start = used_link.href.0
+            .find(&['?', '#'][..])
+            .unwrap_or_else(|| used_link.href.0.len());
+
+        // try calling canonicalize
+        let path = used_link.path.to_str().unwrap_or("");
+        let mut href = BumpString::from_str_in(path, &arena);
+        push_and_canonicalize(&mut href, &try_percent_decode(&used_link.href.0[..qs_start]));
+
+    }
+
+    Some(link)
+}
+
 impl<P, C: LinkCollector<P>> LinkCollector<P> for LocalLinksOnly<C> {
     fn new() -> Self {
         LocalLinksOnly { collector: C::new(), arena: Bump::new() }
     }
 
-    fn ingest(&mut self, mut link: Link<'_, P>) {
-        if let Link::Uses(ref mut used_link) = link {
-           let qs_start = used_link.href.0
-                .find(&['?', '#'][..])
-                .unwrap_or_else(|| used_link.href.0.len());
-
-            // try calling canonicalize
-            let path = used_link.path.to_str().unwrap_or("");
-            let mut href = BumpString::from_str_in(path, &self.arena);
-            push_and_canonicalize(&mut href, &try_percent_decode(&used_link.href.0[..qs_start]));
-
-            if is_bad_schema(&used_link.href.0.as_bytes()) {
-                return;
-            }
+    fn ingest(&mut self, link: Link<'_, P>) {
+        if let Some(link) = canonicalize_local_link(&self.arena, link) {
+            self.collector.ingest(link);
         }
-
-        self.collector.ingest(link);
     }
 
     fn merge(&mut self, other: Self) {
@@ -197,50 +206,4 @@ impl<P: Copy + PartialEq> BrokenLinkCollector<P> {
         self.used_link_count
     }
 
-}
-
-#[inline]
-fn is_bad_schema(url: &[u8]) -> bool {
-    // check if url is empty
-    let first_char = match url.first() {
-        Some(x) => x,
-        None => return false,
-    };
-
-    // protocol-relative URL
-    if url.starts_with(b"//") {
-        return true;
-    }
-
-    // check if string before first : is a valid URL scheme
-    // see RFC 2396, Appendix A for what constitutes a valid scheme
-
-    if !matches!(first_char, b'a'..=b'z' | b'A'..=b'Z') {
-        return false;
-    }
-
-    for c in &url[1..] {
-        match c {
-            b'a'..=b'z' => (),
-            b'A'..=b'Z' => (),
-            b'0'..=b'9' => (),
-            b'+' => (),
-            b'-' => (),
-            b'.' => (),
-            b':' => return true,
-            _ => return false,
-        }
-    }
-
-    false
-}
-
-#[test]
-fn test_is_bad_schema() {
-    assert!(is_bad_schema(b"//"));
-    assert!(!is_bad_schema(b""));
-    assert!(!is_bad_schema(b"http"));
-    assert!(is_bad_schema(b"http:"));
-    assert!(is_bad_schema(b"http:/"));
-    assert!(!is_bad_schema(b"http/"));
 }

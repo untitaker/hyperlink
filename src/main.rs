@@ -3,6 +3,7 @@ mod collector;
 mod html;
 mod markdown;
 mod paragraph;
+mod urls;
 
 use std::cmp;
 use std::collections::{BTreeMap, BTreeSet};
@@ -19,8 +20,6 @@ use rayon::prelude::*;
 use collector::{BrokenLinkCollector, LocalLinksOnly, LinkCollector, UsedLinkCollector};
 use html::{DefinedLink, Document, DocumentBuffers, Link};
 use paragraph::{DebugParagraphWalker, NoopParagraphWalker, ParagraphHasher, ParagraphWalker};
-
-use crate::html::is_external_url;
 
 static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
 static HTML_FILES: &[&str] = &["htm", "html"];
@@ -377,17 +376,13 @@ fn dump_external_links(base_path: PathBuf) -> Result<(), Error> {
 
 
     for used_link in used_links {
+        external_link_count += 1;
 
-        // check if the used link is external
-        if is_external_url(used_link.href.as_str()) {
-            external_link_count += 1;
+        let external_links_at_path = external_links
+            .entry(used_link.path.clone())
+            .or_insert_with(|| BTreeSet::new());
 
-            let external_links_at_path = external_links
-                .entry(used_link.path.clone())
-                .or_insert_with(|| BTreeSet::new());
-
-            external_links_at_path.insert(&used_link.href);
-        }
+        external_links_at_path.insert(&used_link.href);
     }
 
     for (filepath, external_links_by_path) in external_links {
