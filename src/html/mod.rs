@@ -224,13 +224,25 @@ impl<'a, P> Link<'a, P> {
     }
 }
 
+const BUF_SIZE: usize = 1024 * 1024;
+
 /// This struct is initialized once per "batch of documents" that will be processed on a single
 /// worker thread (as determined by rayon). It pays off to do as much heap allocation as possible
 /// here once instead of in Document::links.
-#[derive(Default)]
 pub struct DocumentBuffers {
     arena: bumpalo::Bump,
+    html_read_buffer: Box<[u8; BUF_SIZE]>,
     parser_buffers: parser::ParserBuffers,
+}
+
+impl Default for DocumentBuffers {
+    fn default() -> Self {
+        DocumentBuffers {
+            arena: Default::default(),
+            html_read_buffer: Box::new([0; BUF_SIZE]),
+            parser_buffers: Default::default(),
+        }
+    }
 }
 
 impl DocumentBuffers {
@@ -293,10 +305,8 @@ impl Document {
         preserve_anchor: bool,
         rel_href: &str,
     ) -> Href<'b> {
-        let qs_start = rel_href
-            .find(&['?', '#'][..])
-            .unwrap_or_else(|| rel_href.len());
-        let anchor_start = rel_href.find('#').unwrap_or_else(|| rel_href.len());
+        let qs_start = rel_href.find(&['?', '#'][..]).unwrap_or(rel_href.len());
+        let anchor_start = rel_href.find('#').unwrap_or(rel_href.len());
 
         let mut href = BumpString::from_str_in(&self.href, arena);
         if self.is_index_html {
@@ -308,7 +318,7 @@ impl Document {
         if preserve_anchor {
             let anchor = &rel_href[anchor_start..];
             if anchor.len() > 1 {
-                href.push_str(&try_percent_decode(&anchor));
+                href.push_str(&try_percent_decode(anchor));
             }
         }
 
@@ -319,17 +329,11 @@ impl Document {
         &self,
         doc_buf: &'b mut DocumentBuffers,
         check_anchors: bool,
-        get_paragraphs: bool,
     ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
     where
         'b: 'l,
     {
-        self.links_from_read::<_, P>(
-            doc_buf,
-            fs::File::open(&*self.path)?,
-            check_anchors,
-            get_paragraphs,
-        )
+        self.links_from_read::<_, P>(doc_buf, fs::File::open(&*self.path)?, check_anchors)
     }
 
     fn links_from_read<'b, 'l, R: Read, P: ParagraphWalker>(
@@ -337,7 +341,6 @@ impl Document {
         doc_buf: &'b mut DocumentBuffers,
         read: R,
         check_anchors: bool,
-        get_paragraphs: bool,
     ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
     where
         'b: 'l,
@@ -352,12 +355,12 @@ impl Document {
                 link_buf: &mut link_buf,
                 in_paragraph: false,
                 last_paragraph_i: 0,
-                get_paragraphs,
                 buffers: &mut doc_buf.parser_buffers,
                 current_tag_is_closing: false,
                 check_anchors,
             };
-            let reader = Tokenizer::new_with_emitter(IoReader::new(read), emitter);
+            let ioreader = IoReader::new_with_buffer(read, doc_buf.html_read_buffer.as_mut());
+            let reader = Tokenizer::new_with_emitter(ioreader, emitter);
 
             for error in reader {
                 error?;
@@ -375,17 +378,14 @@ fn test_document_href() {
         Path::new("public/platforms/python/troubleshooting/index.html"),
     );
 
-    assert_eq!(doc.href(), Href("platforms/python/troubleshooting".into()));
+    assert_eq!(doc.href(), Href("platforms/python/troubleshooting"));
 
     let doc = Document::new(
         Path::new("public/"),
         Path::new("public/platforms/python/troubleshooting.html"),
     );
 
-    assert_eq!(
-        doc.href(),
-        Href("platforms/python/troubleshooting.html".into())
-    );
+    assert_eq!(doc.href(), Href("platforms/python/troubleshooting.html"));
 }
 
 #[test]
@@ -414,12 +414,12 @@ fn test_html_parsing_malformed_script() {
     let mut doc_buf = DocumentBuffers::default();
 
     let links = doc
-        .links_from_read::<_, ParagraphHasher>(&mut doc_buf, html.as_bytes(), false, false)
+        .links_from_read::<_, ParagraphHasher>(&mut doc_buf, html.as_bytes(), false)
         .unwrap();
 
     let used_link = |x: &'static str| {
         Link::Uses(UsedLink {
-            href: Href(x.into()),
+            href: Href(x),
             path: doc.path.clone(),
             paragraph: None,
         })
@@ -478,13 +478,12 @@ fn test_document_links() {
     """#
         .as_bytes(),
         false,
-        false,
     )
     .unwrap();
 
     let used_link = |x: &'static str| {
         Link::Uses(UsedLink {
-            href: Href(x.into()),
+            href: Href(x),
             path: doc.path.clone(),
             paragraph: None,
         })
@@ -521,24 +520,24 @@ fn test_document_join_index_html() {
 
     assert_eq!(
         doc.join(&arena, false, "../../ruby#foo"),
-        Href("platforms/ruby".into())
+        Href("platforms/ruby")
     );
     assert_eq!(
         doc.join(&arena, true, "../../ruby#foo"),
-        Href("platforms/ruby#foo".into())
+        Href("platforms/ruby#foo")
     );
     assert_eq!(
         doc.join(&arena, true, "../../ruby?bar=1#foo"),
-        Href("platforms/ruby#foo".into())
+        Href("platforms/ruby#foo")
     );
 
     assert_eq!(
         doc.join(&arena, false, "/platforms/ruby"),
-        Href("platforms/ruby".into())
+        Href("platforms/ruby")
     );
     assert_eq!(
         doc.join(&arena, true, "/platforms/ruby?bar=1#foo"),
-        Href("platforms/ruby#foo".into())
+        Href("platforms/ruby#foo")
     );
 }
 
@@ -553,31 +552,31 @@ fn test_document_join_bare_html() {
 
     assert_eq!(
         doc.join(&arena, false, "../ruby#foo"),
-        Href("platforms/ruby".into())
+        Href("platforms/ruby")
     );
     assert_eq!(
         doc.join(&arena, true, "../ruby#foo"),
-        Href("platforms/ruby#foo".into())
+        Href("platforms/ruby#foo")
     );
     assert_eq!(
         doc.join(&arena, true, "../ruby?bar=1#foo"),
-        Href("platforms/ruby#foo".into())
+        Href("platforms/ruby#foo")
     );
 
     assert_eq!(
         doc.join(&arena, false, "/platforms/ruby"),
-        Href("platforms/ruby".into())
+        Href("platforms/ruby")
     );
     assert_eq!(
         doc.join(&arena, true, "/platforms/ruby?bar=1#foo"),
-        Href("platforms/ruby#foo".into())
+        Href("platforms/ruby#foo")
     );
     assert_eq!(
         doc.join(&arena, false, "/locations/troms%C3%B8"),
-        Href("locations/tromsø".into())
+        Href("locations/tromsø")
     );
     assert_eq!(
         doc.join(&arena, true, "/locations/oslo#gr%C3%BCnerl%C3%B8kka"),
-        Href("locations/oslo#grünerløkka".into())
+        Href("locations/oslo#grünerløkka")
     );
 }

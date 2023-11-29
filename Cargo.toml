@@ -1,6 +1,6 @@
 [package]
 name = "hyperlink"
-version = "0.1.26"
+version = "0.1.31"
 authors = ["Markus Unterwaditzer <markus-honeypot@unterwaditzer.net>"]
 description = "Very fast link checker for CI."
 homepage = "https://github.com/untitaker/hyperlink"
@@ -16,15 +16,20 @@ rayon = "1.5.1"
 pulldown-cmark = "0.8.0"
 blake3 = "1.0.0"
 
-html5gum = "0.5.0"
-jwalk = "0.6.0"
-patricia_tree = "0.3.1"
-bumpalo = { version = "3.8.0", features = ["collections"] }
+html5gum = "0.5.7"
+jwalk = "0.7.0"
+bumpalo = { version = "3.11.1", features = ["collections"] }
 percent-encoding = "2.1.0"
 clap = { version = "3.0.4", features = ["std", "derive"], default_features = false }
+num_cpus = "1.15.0"
 
 [dev-dependencies]
 assert_cmd = "2.0.2"
 assert_fs = "1.0.2"
 predicates = "1.0.8"
 pretty_assertions = "1.0.0"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = 'abort'

@@ -1,8 +1,10 @@
+#![allow(clippy::manual_flatten)]
 mod collector;
 mod html;
 mod markdown;
 mod paragraph;
 
+use std::cmp;
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
 use std::path::{Path, PathBuf};
@@ -10,11 +12,11 @@ use std::process;
 
 use anyhow::{anyhow, Context, Error};
 use clap::Parser;
-use jwalk::WalkDir;
+use jwalk::WalkDirGeneric;
 use markdown::DocumentSource;
 use rayon::prelude::*;
 
-use collector::{BrokenLinkCollector, LinkCollector, UsedLinkCollector};
+use collector::{BrokenLinkCollector, LocalLinksOnly, LinkCollector, UsedLinkCollector};
 use html::{DefinedLink, Document, DocumentBuffers, Link};
 use paragraph::{DebugParagraphWalker, NoopParagraphWalker, ParagraphHasher, ParagraphWalker};
 
@@ -103,12 +105,14 @@ fn main() -> Result<(), Error> {
         subcommand,
     } = Cli::parse();
 
-    if let Some(n) = threads {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(n)
-            .build_global()
-            .unwrap();
-    }
+    rayon::ThreadPoolBuilder::new()
+        // most of the work we do is kind of I/O bound. rayon assumes CPU-heavy workload. we could
+        // look into tokio-uring at some point, but it seems like a hassle wrt ownership
+        //
+        // hyperlink seems to deadlock on less than 1 thread.
+        .num_threads(cmp::max(2, threads.unwrap_or_else(|| 4 * num_cpus::get())))
+        .build_global()
+        .unwrap();
 
     match subcommand {
         Some(Subcommand::DumpParagraphs { file }) => {
@@ -132,7 +136,7 @@ fn main() -> Result<(), Error> {
             // Invalid invocation. Ultra hack to show help if no arguments are provided. Structopt
             // does not seem to have a functional way to require either an argument or a
             // subcommand. required_if etc don't actually work.
-            let help_message = Cli::try_parse_from(&["hyperlink", "--help"])
+            let help_message = Cli::try_parse_from(["hyperlink", "--help"])
                 .map(|_| ())
                 .unwrap_err();
             help_message.print()?;
@@ -158,13 +162,9 @@ where
 {
     println!("Reading files");
 
-    let html_result = extract_html_links::<BrokenLinkCollector<_>, P>(
-        &base_path,
-        check_anchors,
-        sources_path.is_some(),
-    )?;
+    let html_result = extract_html_links::<LocalLinksOnly<BrokenLinkCollector<_>>, P>(&base_path, check_anchors)?;
 
-    let used_links_len = html_result.collector.used_links_count();
+    let used_links_len = html_result.collector.collector.used_links_count();
     println!(
         "Checking {} links from {} files ({} documents)",
         used_links_len, html_result.file_count, html_result.documents_count,
@@ -175,6 +175,7 @@ where
     let mut bad_anchors_count = 0;
 
     let mut broken_links = html_result
+        .collector
         .collector
         .get_broken_links(check_anchors)
         .peekable();
@@ -250,21 +251,21 @@ where
 
         if github_actions {
             if !bad_links.is_empty() {
-                print_github_actions_href_list("bad links", &*filepath, &bad_links)?;
+                print_github_actions_href_list("bad links", &filepath, &bad_links)?;
             }
 
             if !bad_anchors.is_empty() {
-                print_github_actions_href_list("bad anchors", &*filepath, &bad_anchors)?;
+                print_github_actions_href_list("bad anchors", &filepath, &bad_anchors)?;
             }
         }
 
         println!();
     }
 
-    println!("Found {} bad links", bad_links_count);
+    println!("Found {bad_links_count} bad links");
 
     if check_anchors {
-        println!("Found {} bad anchors", bad_anchors_count);
+        println!("Found {bad_anchors_count} bad anchors");
     }
 
     // We're about to exit the program and leaking the memory is faster than running drop
@@ -283,9 +284,9 @@ where
 
 fn print_href_error(message: &'static str, href: &str, lineno: Option<usize>) {
     if let Some(lineno) = lineno {
-        println!("  {} /{} at line {}", message, href, lineno);
+        println!("  {message} /{href} at line {lineno}");
     } else {
-        println!("  {} /{}", message, href);
+        println!("  {message} /{href}");
     }
 }
 
@@ -337,7 +338,7 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
         Some(x) if HTML_FILES.contains(&x) => {
             let document = Document::new(Path::new(""), &path);
             document
-                .links::<DebugParagraphWalker<ParagraphHasher>>(&mut doc_buf, false, true)?
+                .links::<DebugParagraphWalker<ParagraphHasher>>(&mut doc_buf, false)?
                 .filter_map(|link| Some((link.into_paragraph()?, None)))
                 .collect()
         }
@@ -346,9 +347,9 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
 
     for (paragraph, lineno) in paragraphs {
         if let Some(lineno) = lineno {
-            println!("{}: {}", lineno, paragraph);
+            println!("{lineno}: {paragraph}");
         } else {
-            println!("{}", paragraph);
+            println!("{paragraph}");
         }
     }
 
@@ -358,7 +359,7 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
 fn dump_external_links(base_path: PathBuf) -> Result<(), Error> {
     println!("Reading files");
     let html_result =
-        extract_html_links::<UsedLinkCollector<_>, NoopParagraphWalker>(&base_path, true, false)?;
+        extract_html_links::<UsedLinkCollector<_>, NoopParagraphWalker>(&base_path, true)?;
 
     println!(
         "Checking {} links from {} files ({} documents)",
@@ -414,64 +415,45 @@ struct HtmlResult<C> {
 
 fn walk_files(
     base_path: &Path,
-) -> Result<impl ParallelIterator<Item = jwalk::DirEntry<((), ())>>, Error> {
-    let entries = WalkDir::new(&base_path)
+) -> impl ParallelIterator<Item = Result<jwalk::DirEntry<((), bool)>, jwalk::Error>> {
+    WalkDirGeneric::<((), bool)>::new(base_path)
         .sort(true) // helps branch predictor (?)
+        .skip_hidden(false)
         .process_read_dir(|_, _, _, children| {
-            children.retain(|dir_entry_result| {
-                let entry = match dir_entry_result.as_ref() {
-                    Ok(x) => x,
-                    Err(_) => return true,
-                };
-
-                let file_type = entry.file_type();
-
-                if file_type.is_dir() {
-                    // need to retain, otherwise jwalk won't recurse
-                    return true;
+            for dir_entry_result in children.iter_mut() {
+                if let Ok(dir_entry) = dir_entry_result {
+                    dir_entry.client_state = dir_entry.file_type().is_file();
                 }
-                if file_type.is_symlink() {
-                    return false;
-                }
-
-                if !file_type.is_file() {
-                    return false;
-                }
-
-                true
-            });
-        })
-        .into_iter()
-        .filter_map(|entry| {
-            let entry = match entry {
-                Ok(x) => x,
-                Err(e) => return Some(Err(e)),
-            };
-
-            if entry.file_type().is_dir() {
-                None
-            } else {
-                Some(Ok(entry))
             }
         })
-        // XXX: cannot use par_bridge because of https://github.com/rayon-rs/rayon/issues/690
-        .collect::<Result<Vec<_>, _>>()?;
+        .into_iter()
+        .par_bridge()
+        .filter_map(|entry_result| {
+            if let Ok(entry) = entry_result {
+                if let Some(err) = entry.read_children_error {
+                    // https://github.com/Byron/jwalk/issues/40
+                    return Some(Err(err));
+                }
 
-    // Minimize amount of LinkCollector instances created. This impacts parallelism but
-    // `LinkCollector::merge` is rather slow.
-    let min_len = entries.len() / rayon::current_num_threads();
-    Ok(entries.into_par_iter().with_min_len(min_len))
+                if !entry.client_state {
+                    return None;
+                }
+                Some(Ok(entry))
+            } else {
+                Some(entry_result)
+            }
+        })
 }
 
 fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
     base_path: &Path,
     check_anchors: bool,
-    get_paragraphs: bool,
 ) -> Result<HtmlResult<C>, Error> {
-    let result: Result<_, Error> = walk_files(base_path)?
+    let result: Result<_, Error> = walk_files(base_path)
         .try_fold(
             || (DocumentBuffers::default(), C::new(), 0, 0),
             |(mut doc_buf, mut collector, mut documents_count, mut file_count), entry| {
+                let entry = entry?;
                 let path = entry.path();
                 let document = Document::new(base_path, &path);
 
@@ -490,7 +472,7 @@ fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
                 }
 
                 for link in document
-                    .links::<P>(&mut doc_buf, check_anchors, get_paragraphs)
+                    .links::<P>(&mut doc_buf, check_anchors)
                     .with_context(|| format!("Failed to read file {}", document.path.display()))?
                 {
                     collector.ingest(link);
@@ -533,8 +515,9 @@ type MarkdownResult<P> = BTreeMap<P, Vec<(DocumentSource, usize)>>;
 fn extract_markdown_paragraphs<P: ParagraphWalker>(
     sources_path: &Path,
 ) -> Result<MarkdownResult<P::Paragraph>, Error> {
-    let results: Vec<Result<_, Error>> = walk_files(sources_path)?
+    let results: Vec<Result<_, Error>> = walk_files(sources_path)
         .try_fold(Vec::new, |mut paragraphs, entry| {
+            let entry = entry?;
             let source = DocumentSource::new(entry.path());
 
             if !source
@@ -573,7 +556,7 @@ fn extract_markdown_paragraphs<P: ParagraphWalker>(
 fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(), Error> {
     println!("Reading files");
     let html_result =
-        extract_html_links::<UsedLinkCollector<_>, ParagraphHasher>(&base_path, true, true)?;
+        extract_html_links::<UsedLinkCollector<_>, ParagraphHasher>(&base_path, true)?;
 
     println!("Reading source files");
     let paragraps_to_sourcefile = extract_markdown_paragraphs::<ParagraphHasher>(&sources_path)?;
@@ -613,17 +596,11 @@ fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(),
         }
     }
 
-    println!("{} total links", total_links);
-    println!("{} links outside of paragraphs", link_no_paragraph);
-    println!(
-        "{} links with multiple potential sources",
-        link_multiple_sources
-    );
-    println!("{} links with no sources", link_no_source);
-    println!(
-        "{} links with one potential source (perfect match)",
-        link_single_source
-    );
+    println!("{total_links} total links");
+    println!("{link_no_paragraph} links outside of paragraphs");
+    println!("{link_multiple_sources} links with multiple potential sources");
+    println!("{link_no_source} links with no sources");
+    println!("{link_single_source} links with one potential source (perfect match)");
 
     Ok(())
 }

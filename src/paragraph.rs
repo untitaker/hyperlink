@@ -15,6 +15,12 @@ pub trait ParagraphWalker: Send {
     type Paragraph: Clone + Eq + PartialEq + Hash + Ord + PartialOrd + Send + 'static;
 
     fn new() -> Self;
+
+    #[inline]
+    fn is_noop() -> bool {
+        false
+    }
+
     fn update_raw(&mut self, text: &[u8]);
     fn finish_paragraph(&mut self) -> Option<Self::Paragraph>;
 
@@ -101,12 +107,20 @@ pub enum VoidParagraph {}
 impl ParagraphWalker for NoopParagraphWalker {
     type Paragraph = VoidParagraph;
 
+    #[inline]
     fn new() -> Self {
         NoopParagraphWalker
     }
 
+    #[inline]
+    fn is_noop() -> bool {
+        true
+    }
+
+    #[inline]
     fn update_raw(&mut self, _text: &[u8]) {}
 
+    #[inline]
     fn finish_paragraph(&mut self) -> Option<Self::Paragraph> {
         None
     }

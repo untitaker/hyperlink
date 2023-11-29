@@ -1,19 +1,13 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use bumpalo::Bump;
 use bumpalo::collections::String as BumpString;
-use patricia_tree::PatriciaMap;
 
-use crate::html::{Href, Link, UsedLink, push_and_canonicalize, try_percent_decode};
+use crate::html::{Href, Link, push_and_canonicalize, try_percent_decode, UsedLink};
 
-impl<'a> AsRef<[u8]> for Href<'a> {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-}
-
-pub trait LinkCollector<P: Send>: Send {
+pub trait LinkCollector<P>: Send {
     fn new() -> Self;
     fn ingest(&mut self, link: Link<'_, P>);
     fn merge(&mut self, other: Self);
@@ -80,48 +74,71 @@ impl<P: Copy> LinkState<P> {
     }
 }
 
+pub struct LocalLinksOnly<C> {
+    pub collector: C,
+    arena: Bump,
+}
+
+impl<P, C: LinkCollector<P>> LinkCollector<P> for LocalLinksOnly<C> {
+    fn new() -> Self {
+        LocalLinksOnly { collector: C::new(), arena: Bump::new() }
+    }
+
+    fn ingest(&mut self, mut link: Link<'_, P>) {
+        if let Link::Uses(ref mut used_link) = link {
+           let qs_start = used_link.href.0
+                .find(&['?', '#'][..])
+                .unwrap_or_else(|| used_link.href.0.len());
+
+            // try calling canonicalize
+            let path = used_link.path.to_str().unwrap_or("");
+            let mut href = BumpString::from_str_in(path, &self.arena);
+            push_and_canonicalize(&mut href, &try_percent_decode(&used_link.href.0[..qs_start]));
+
+            if is_bad_schema(&used_link.href.0.as_bytes()) {
+                return;
+            }
+        }
+
+        self.collector.ingest(link);
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.collector.merge(other.collector);
+    }
+}
+
 /// Link collector used for actual link checking. Keeps track of broken links only.
 pub struct BrokenLinkCollector<P> {
-    links: PatriciaMap<LinkState<P>>,
+    links: BTreeMap<String, LinkState<P>>,
     used_link_count: usize,
-    arena: Bump,
 }
 
 impl<P: Send + Copy> LinkCollector<P> for BrokenLinkCollector<P> {
     fn new() -> Self {
         BrokenLinkCollector {
-            links: PatriciaMap::new(),
+            links: BTreeMap::new(),
             used_link_count: 0,
-            arena: Bump::new(),
         }
     }
 
     fn ingest(&mut self, link: Link<'_, P>) {
         match link {
             Link::Uses(used_link) => {
-                let qs_start = used_link.href.0
-                    .find(&['?', '#'][..])
-                    .unwrap_or_else(|| used_link.href.0.len());
+                self.used_link_count += 1;
 
-                // try calling canonicalize
-                let path = used_link.path.to_str().unwrap_or("");
-                let mut href = BumpString::from_str_in(path, &self.arena);
-                push_and_canonicalize(&mut href, &try_percent_decode(&used_link.href.0[..qs_start]));
-
-                // ingest only if the link has a good schema
-                if !is_bad_schema(&used_link.href.0.as_bytes()) {
-                    self.used_link_count += 1;
-                    if let Some(state) = self.links.get_mut(&used_link.href) {
-                        state.add_usage(&used_link);
-                    } else {
+                self.links
+                    .entry(used_link.href.0.to_owned())
+                    .and_modify(|state| state.add_usage(&used_link))
+                    .or_insert_with(|| {
                         let mut state = LinkState::Undefined(Vec::new());
                         state.add_usage(&used_link);
-                        self.links.insert(used_link.href, state);
-                    }
-                }
+                        state
+                    });
             }
             Link::Defines(defined_link) => {
-                self.links.insert(defined_link.href, LinkState::Defined);
+                self.links
+                    .insert(defined_link.href.0.to_owned(), LinkState::Defined);
             }
         }
     }
@@ -151,10 +168,9 @@ impl<P: Copy + PartialEq> BrokenLinkCollector<P> {
 
         for (href, state) in self.links.iter() {
             if let LinkState::Undefined(links) = state {
-                let href = unsafe { String::from_utf8_unchecked(href) };
                 let hard_404 = if check_anchors {
                     !matches!(
-                        self.links.get(&Href(&href).without_anchor()),
+                        self.links.get(Href(href).without_anchor().0),
                         Some(&LinkState::Defined)
                     )
                 } else {
