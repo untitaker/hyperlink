@@ -17,7 +17,7 @@ use jwalk::WalkDirGeneric;
 use markdown::DocumentSource;
 use rayon::prelude::*;
 
-use collector::{BrokenLinkCollector, LocalLinksOnly, LinkCollector, UsedLinkCollector};
+use collector::{BrokenLinkCollector, LinkCollector, LocalLinksOnly, UsedLinkCollector};
 use html::{DefinedLink, Document, DocumentBuffers, Link};
 use paragraph::{DebugParagraphWalker, NoopParagraphWalker, ParagraphHasher, ParagraphWalker};
 
@@ -89,9 +89,7 @@ enum Subcommand {
     /// Dump out a list and count of _external_ links.  hyperlink does not check external links,
     /// but this subcommand can be used to get a summary of the external links that exist in your
     /// site.
-    DumpExternalLinks {
-        base_path: PathBuf,
-    },
+    DumpExternalLinks { base_path: PathBuf },
 }
 
 fn main() -> Result<(), Error> {
@@ -125,7 +123,7 @@ fn main() -> Result<(), Error> {
         }
         Some(Subcommand::DumpExternalLinks { base_path }) => {
             return dump_external_links(base_path);
-        },
+        }
         None => {}
     }
 
@@ -161,7 +159,8 @@ where
 {
     println!("Reading files");
 
-    let html_result = extract_html_links::<LocalLinksOnly<BrokenLinkCollector<_>>, P>(&base_path, check_anchors)?;
+    let html_result =
+        extract_html_links::<LocalLinksOnly<BrokenLinkCollector<_>>, P>(&base_path, check_anchors)?;
 
     let used_links_len = html_result.collector.collector.used_links_count();
     println!(
@@ -362,18 +361,15 @@ fn dump_external_links(base_path: PathBuf) -> Result<(), Error> {
 
     println!(
         "Checking {} links from {} files ({} documents)",
-        html_result.collector.used_links.len(), html_result.file_count, html_result.documents_count,
+        html_result.collector.used_links.len(),
+        html_result.file_count,
+        html_result.documents_count,
     );
 
     let mut external_links = BTreeMap::new();
     let mut external_link_count: u32 = 0;
 
-    let used_links = html_result
-        .collector
-        .used_links
-        .iter()
-        .peekable();
-
+    let used_links = html_result.collector.used_links.iter().peekable();
 
     for used_link in used_links {
         external_link_count += 1;
@@ -550,8 +546,9 @@ fn extract_markdown_paragraphs<P: ParagraphWalker>(
 
 fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(), Error> {
     println!("Reading files");
-    let html_result =
-        extract_html_links::<LocalLinksOnly<UsedLinkCollector<_>>, ParagraphHasher>(&base_path, true)?;
+    let html_result = extract_html_links::<LocalLinksOnly<UsedLinkCollector<_>>, ParagraphHasher>(
+        &base_path, true,
+    )?;
 
     println!("Reading source files");
     let paragraps_to_sourcefile = extract_markdown_paragraphs::<ParagraphHasher>(&sources_path)?;

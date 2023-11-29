@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use bumpalo::Bump;
 use bumpalo::collections::String as BumpString;
+use bumpalo::Bump;
 
-use crate::html::{Href, Link, push_and_canonicalize, try_percent_decode, UsedLink};
+use crate::html::{push_and_canonicalize, try_percent_decode, Href, Link, UsedLink};
 use crate::urls::is_external_link;
 
 pub trait LinkCollector<P>: Send {
@@ -87,15 +87,19 @@ pub fn canonicalize_local_link<'a, P>(arena: &Bump, mut link: Link<'a, P>) -> Op
             return None;
         }
 
-        let qs_start = used_link.href.0
+        let qs_start = used_link
+            .href
+            .0
             .find(&['?', '#'][..])
             .unwrap_or_else(|| used_link.href.0.len());
 
         // try calling canonicalize
         let path = used_link.path.to_str().unwrap_or("");
         let mut href = BumpString::from_str_in(path, &arena);
-        push_and_canonicalize(&mut href, &try_percent_decode(&used_link.href.0[..qs_start]));
-
+        push_and_canonicalize(
+            &mut href,
+            &try_percent_decode(&used_link.href.0[..qs_start]),
+        );
     }
 
     Some(link)
@@ -103,7 +107,10 @@ pub fn canonicalize_local_link<'a, P>(arena: &Bump, mut link: Link<'a, P>) -> Op
 
 impl<P, C: LinkCollector<P>> LinkCollector<P> for LocalLinksOnly<C> {
     fn new() -> Self {
-        LocalLinksOnly { collector: C::new(), arena: Bump::new() }
+        LocalLinksOnly {
+            collector: C::new(),
+            arena: Bump::new(),
+        }
     }
 
     fn ingest(&mut self, link: Link<'_, P>) {
@@ -205,5 +212,4 @@ impl<P: Copy + PartialEq> BrokenLinkCollector<P> {
     pub fn used_links_count(&self) -> usize {
         self.used_link_count
     }
-
 }

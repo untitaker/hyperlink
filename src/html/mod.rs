@@ -150,7 +150,6 @@ mod test_push_and_canonicalize {
         push_and_canonicalize(&mut base, path);
         assert_eq!(base, "http://foo.com");
     }
-
 }
 
 #[inline]
@@ -419,8 +418,8 @@ fn test_html_parsing_malformed_script() {
 fn test_document_links() {
     use bumpalo::Bump;
 
-    use crate::paragraph::ParagraphHasher;
     use crate::collector::canonicalize_local_link;
+    use crate::paragraph::ParagraphHasher;
 
     let doc = Document::new(
         Path::new("public/"),
@@ -479,7 +478,9 @@ fn test_document_links() {
     let arena = Bump::new();
 
     assert_eq!(
-        &links.filter_map(|x| canonicalize_local_link(&arena, x)).collect::<Vec<_>>(),
+        &links
+            .filter_map(|x| canonicalize_local_link(&arena, x))
+            .collect::<Vec<_>>(),
         &[
             used_link("platforms/ruby"),
             used_link("platforms/perl"),

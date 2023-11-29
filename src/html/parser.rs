@@ -232,4 +232,3 @@ where
     fn set_doctype_system_identifier(&mut self, _: &[u8]) {}
     fn set_force_quirks(&mut self) {}
 }
-
