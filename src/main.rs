@@ -551,7 +551,7 @@ fn extract_markdown_paragraphs<P: ParagraphWalker>(
 fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(), Error> {
     println!("Reading files");
     let html_result =
-        extract_html_links::<UsedLinkCollector<_>, ParagraphHasher>(&base_path, true)?;
+        extract_html_links::<LocalLinksOnly<UsedLinkCollector<_>>, ParagraphHasher>(&base_path, true)?;
 
     println!("Reading source files");
     let paragraps_to_sourcefile = extract_markdown_paragraphs::<ParagraphHasher>(&sources_path)?;
@@ -564,7 +564,7 @@ fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(),
     let mut link_single_source = 0;
     // We only care about HTML's used links because paragraph matching is exclusively for error
     // messages that point to the broken link.
-    for link in &html_result.collector.used_links {
+    for link in &html_result.collector.collector.used_links {
         total_links += 1;
 
         let paragraph = match link.paragraph {

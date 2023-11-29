@@ -9,7 +9,6 @@ use std::str;
 use std::sync::Arc;
 
 use anyhow::Error;
-use bumpalo::Bump;
 use bumpalo::collections::String as BumpString;
 use bumpalo::collections::Vec as BumpVec;
 use html5gum::{IoReader, Tokenizer};
@@ -418,6 +417,8 @@ fn test_html_parsing_malformed_script() {
 
 #[test]
 fn test_document_links() {
+    use bumpalo::Bump;
+
     use crate::paragraph::ParagraphHasher;
     use crate::collector::canonicalize_local_link;
 
