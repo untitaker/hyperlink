@@ -21,6 +21,8 @@ use collector::{BrokenLinkCollector, LinkCollector, LocalLinksOnly, UsedLinkColl
 use html::{DefinedLink, Document, DocumentBuffers, Link};
 use paragraph::{DebugParagraphWalker, NoopParagraphWalker, ParagraphHasher, ParagraphWalker};
 
+use crate::urls::is_external_link;
+
 static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
 static HTML_FILES: &[&str] = &["htm", "html"];
 
@@ -366,32 +368,13 @@ fn dump_external_links(base_path: PathBuf) -> Result<(), Error> {
         html_result.documents_count,
     );
 
-    let mut external_links = BTreeMap::new();
-    let mut external_link_count: u32 = 0;
-
     let used_links = html_result.collector.used_links.iter().peekable();
 
     for used_link in used_links {
-        external_link_count += 1;
-
-        let external_links_at_path = external_links
-            .entry(used_link.path.clone())
-            .or_insert_with(|| BTreeSet::new());
-
-        external_links_at_path.insert(&used_link.href);
-    }
-
-    for (filepath, external_links_by_path) in external_links {
-        println!("{}", filepath.display());
-
-        for href in &external_links_by_path {
-            println!("  info: external link {}", href);
+        if is_external_link(used_link.href.as_bytes()) {
+            println!("{}", used_link.href);
         }
-
-        println!();
     }
-
-    println!("Found {} external links", external_link_count);
 
     mem::forget(html_result);
 
