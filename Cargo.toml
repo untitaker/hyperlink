@@ -1,6 +1,6 @@
 [package]
 name = "hyperlink"
-version = "0.1.31"
+version = "0.1.32"
 authors = [
     "Markus Unterwaditzer <markus-honeypot@unterwaditzer.net>",
     # contributed dump-external-links command
