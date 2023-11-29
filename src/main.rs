@@ -3,6 +3,7 @@ mod collector;
 mod html;
 mod markdown;
 mod paragraph;
+mod urls;
 
 use std::cmp;
 use std::collections::{BTreeMap, BTreeSet};
@@ -16,9 +17,11 @@ use jwalk::WalkDirGeneric;
 use markdown::DocumentSource;
 use rayon::prelude::*;
 
-use collector::{BrokenLinkCollector, LinkCollector, UsedLinkCollector};
+use collector::{BrokenLinkCollector, LinkCollector, LocalLinksOnly, UsedLinkCollector};
 use html::{DefinedLink, Document, DocumentBuffers, Link};
 use paragraph::{DebugParagraphWalker, NoopParagraphWalker, ParagraphHasher, ParagraphWalker};
+
+use crate::urls::is_external_link;
 
 static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
 static HTML_FILES: &[&str] = &["htm", "html"];
@@ -84,6 +87,11 @@ enum Subcommand {
         base_path: PathBuf,
         sources_path: PathBuf,
     },
+
+    /// Dump out a list and count of _external_ links.  hyperlink does not check external links,
+    /// but this subcommand can be used to get a summary of the external links that exist in your
+    /// site.
+    DumpExternalLinks { base_path: PathBuf },
 }
 
 fn main() -> Result<(), Error> {
@@ -114,6 +122,9 @@ fn main() -> Result<(), Error> {
             sources_path,
         }) => {
             return match_all_paragraphs(base_path, sources_path);
+        }
+        Some(Subcommand::DumpExternalLinks { base_path }) => {
+            return dump_external_links(base_path);
         }
         None => {}
     }
@@ -150,9 +161,10 @@ where
 {
     println!("Reading files");
 
-    let html_result = extract_html_links::<BrokenLinkCollector<_>, P>(&base_path, check_anchors)?;
+    let html_result =
+        extract_html_links::<LocalLinksOnly<BrokenLinkCollector<_>>, P>(&base_path, check_anchors)?;
 
-    let used_links_len = html_result.collector.used_links_count();
+    let used_links_len = html_result.collector.collector.used_links_count();
     println!(
         "Checking {} links from {} files ({} documents)",
         used_links_len, html_result.file_count, html_result.documents_count,
@@ -163,6 +175,7 @@ where
     let mut bad_anchors_count = 0;
 
     let mut broken_links = html_result
+        .collector
         .collector
         .get_broken_links(check_anchors)
         .peekable();
@@ -343,6 +356,31 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
     Ok(())
 }
 
+fn dump_external_links(base_path: PathBuf) -> Result<(), Error> {
+    println!("Reading files");
+    let html_result =
+        extract_html_links::<UsedLinkCollector<_>, NoopParagraphWalker>(&base_path, true)?;
+
+    println!(
+        "Checking {} links from {} files ({} documents)",
+        html_result.collector.used_links.len(),
+        html_result.file_count,
+        html_result.documents_count,
+    );
+
+    let used_links = html_result.collector.used_links.iter().peekable();
+
+    for used_link in used_links {
+        if is_external_link(used_link.href.as_bytes()) {
+            println!("{}", used_link.href);
+        }
+    }
+
+    mem::forget(html_result);
+
+    Ok(())
+}
+
 struct HtmlResult<C> {
     collector: C,
     documents_count: usize,
@@ -491,8 +529,9 @@ fn extract_markdown_paragraphs<P: ParagraphWalker>(
 
 fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(), Error> {
     println!("Reading files");
-    let html_result =
-        extract_html_links::<UsedLinkCollector<_>, ParagraphHasher>(&base_path, true)?;
+    let html_result = extract_html_links::<LocalLinksOnly<UsedLinkCollector<_>>, ParagraphHasher>(
+        &base_path, true,
+    )?;
 
     println!("Reading source files");
     let paragraps_to_sourcefile = extract_markdown_paragraphs::<ParagraphHasher>(&sources_path)?;
@@ -505,7 +544,7 @@ fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(),
     let mut link_single_source = 0;
     // We only care about HTML's used links because paragraph matching is exclusively for error
     // messages that point to the broken link.
-    for link in &html_result.collector.used_links {
+    for link in &html_result.collector.collector.used_links {
         total_links += 1;
 
         let paragraph = match link.paragraph {

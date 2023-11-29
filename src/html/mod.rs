@@ -14,13 +14,18 @@ use bumpalo::collections::Vec as BumpVec;
 use html5gum::{IoReader, Tokenizer};
 
 use crate::paragraph::ParagraphWalker;
+use crate::urls::is_external_link;
 
 #[cfg(test)]
 use pretty_assertions::assert_eq;
 
 #[inline]
-fn push_and_canonicalize(base: &mut BumpString, path: &str) {
-    if path.starts_with('/') {
+pub fn push_and_canonicalize(base: &mut BumpString, path: &str) {
+    if is_external_link(path.as_bytes()) {
+        base.clear();
+        base.push_str(path);
+        return;
+    } else if path.starts_with('/') {
         base.clear();
     } else if path.is_empty() {
         if base.ends_with('/') {
@@ -113,10 +118,42 @@ mod test_push_and_canonicalize {
         push_and_canonicalize(&mut base, path);
         assert_eq!(base, "foo/index.html/baz.html");
     }
+
+    #[test]
+    fn external_scheme_index() {
+        let mut base = String::from("index.html");
+        let path = "http://foo.com";
+        push_and_canonicalize(&mut base, path);
+        assert_eq!(base, "http://foo.com");
+    }
+
+    #[test]
+    fn external_scheme_empty_base() {
+        let mut base = String::from("");
+        let path = "http://foo.com";
+        push_and_canonicalize(&mut base, path);
+        assert_eq!(base, "http://foo.com");
+    }
+
+    #[test]
+    fn external_scheme_relative() {
+        let mut base = String::from("bar.html");
+        let path = "//foo.com";
+        push_and_canonicalize(&mut base, path);
+        assert_eq!(base, "//foo.com");
+    }
+
+    #[test]
+    fn external_scheme_subdir() {
+        let mut base = String::from("foo/bar.html");
+        let path = "http://foo.com";
+        push_and_canonicalize(&mut base, path);
+        assert_eq!(base, "http://foo.com");
+    }
 }
 
 #[inline]
-fn try_percent_decode(input: &str) -> Cow<'_, str> {
+pub fn try_percent_decode(input: &str) -> Cow<'_, str> {
     percent_encoding::percent_decode_str(input)
         .decode_utf8()
         .unwrap_or(Cow::Borrowed(input))
@@ -379,6 +416,9 @@ fn test_html_parsing_malformed_script() {
 
 #[test]
 fn test_document_links() {
+    use bumpalo::Bump;
+
+    use crate::collector::canonicalize_local_link;
     use crate::paragraph::ParagraphHasher;
 
     let doc = Document::new(
@@ -435,8 +475,12 @@ fn test_document_links() {
         })
     };
 
+    let arena = Bump::new();
+
     assert_eq!(
-        &links.collect::<Vec<_>>(),
+        &links
+            .filter_map(|x| canonicalize_local_link(&arena, x))
+            .collect::<Vec<_>>(),
         &[
             used_link("platforms/ruby"),
             used_link("platforms/perl"),
