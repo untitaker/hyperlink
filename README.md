@@ -127,12 +127,16 @@ hyperlink dump-external-links build/
 # ...
 ```
 
-This allows you to build incantations such as the following:
+This allows you to plug in your own logic that fits the requirements for your
+site (special handling for social networks, custom URI schemes, ...):
 
 ```
+# filter for HTTP URLs and turn off all link-checking for our social media
+# handles, as twitter.com is unreliable and we already know those are correct.
+
 hyperlink dump-external-links build/ | \
-  rg '^https?://' | \  # filter for HTTP URLs
-  rg -v 'https://twitter.com' | \  # some customized logic to skip validation of certain websites
+  rg '^https?://' | \
+  rg -v '^https://twitter.com/untitaker' | \
   xargs -P20 -I{} bash -c 'curl -ILf "{}" &> /dev/null || echo "{}"'
 ```
 
