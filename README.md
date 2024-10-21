@@ -14,16 +14,9 @@ A command-line tool to find broken links in your static site.
   Markdown files, `hyperlink` can try to find the original broken link by
   fuzzy-matching the content around it. See the [`--sources` option](#options).
 
-* Supports traversing file-system paths only, no arbitrary URLs.
+* Supports traversing file-system paths only, no arbitrary URLs. Hyperlink does not know how to make network calls.
 
-  * No support for the [`<base>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base) tag.
-
-  * [No support for external links.](https://github.com/untitaker/hyperlink/issues/5) It does not know how to speak HTTP.
-
-  * Even if you don't have a static site, you can put hyperlink to work by
-    first downloading the entire website using e.g.
-    [suckit](https://github.com/Skallwar/suckit). In certain cases this is
-    faster than other tools too.
+  However, hyperlink does have tools to [extract external links](#external-links).
 
 * Does not honor `robots.txt`. A broken link is still broken for users even if
   not indexed by Google.
@@ -123,6 +116,27 @@ links. However, it can do more.
 
 * `exit 1`: There have been errors (hard 404s)
 * `exit 2`: There have been only warnings (broken anchors)
+
+## External links
+
+Hyperlink does know how to check external links, but it gives you some tools to extract them.
+
+```
+hyperlink dump-external-links build/
+# http://example.com/myurl
+# ...
+```
+
+This allows you to build incantations such as the following:
+
+```
+hyperlink dump-external-links build/ | \
+  rg '^https?://' | \  # filter for HTTP URLs
+  rg -v 'https://twitter.com' | \  # some customized logic to skip validation of certain websites
+  xargs -P20 -I{} bash -c 'curl -ILf "{}" &> /dev/null || echo "{}"'
+```
+
+...and allows hyperlink to focus on its main job of traversing and parsing HTML.
 
 ## Alternatives
 
