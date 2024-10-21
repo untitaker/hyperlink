@@ -132,12 +132,12 @@ site (special handling for social networks, custom URI schemes, ...):
 
 ```
 # filter for HTTP URLs and turn off all link-checking for our social media
-# handles, as twitter.com is unreliable and we already know those are correct.
+# handles, as twitter.com is unreliable and we already know those links are correct.
 
 hyperlink dump-external-links build/ | \
   rg '^https?://' | \
   rg -v '^https://twitter.com/untitaker' | \
-  xargs -P20 -I{} bash -c 'curl -ILf "{}" &> /dev/null || echo "{}"'
+  xargs -P20 -I{} bash -c 'curl -ILf "{}" &> /dev/null || (echo "{}" && exit 1)'
 ```
 
 ...and allows hyperlink to focus on its main job of traversing and parsing HTML.
