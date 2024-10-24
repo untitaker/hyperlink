@@ -1,6 +1,6 @@
 # Originally copied from lychee's dockerfile at
 # https://github.com/lycheeverse/lychee/blob/b2a22444707c17b9c1f56e191a66e52057b4c97a/Dockerfile
-FROM rust:1.63-alpine3.16 as builder
+FROM rust:1.82-alpine3.20 AS builder
 
 RUN apk add --no-cache musl-dev
 
