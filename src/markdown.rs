@@ -4,12 +4,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Error;
-use pulldown_cmark::{Event, Parser, Tag};
+use pulldown_cmark::{Event, Parser, TagEnd};
 
 use crate::paragraph::ParagraphWalker;
 
 // Note: Keep in sync with html.rs
-static PARAGRAPH_TAGS: &[Tag<'_>] = &[Tag::Paragraph, Tag::Item];
+static PARAGRAPH_TAGS: &[TagEnd] = &[TagEnd::Paragraph, TagEnd::Item];
 
 #[derive(Clone)]
 pub struct DocumentSource {
@@ -50,7 +50,7 @@ impl DocumentSource {
 
         for (event, range) in Parser::new(&text).into_offset_iter() {
             match event {
-                Event::Start(tag) if PARAGRAPH_TAGS.contains(&tag) => {
+                Event::Start(tag) if PARAGRAPH_TAGS.contains(&tag.to_end()) => {
                     walker.finish_paragraph();
                     in_paragraph = true;
                 }
