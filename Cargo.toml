@@ -38,3 +38,7 @@ pretty_assertions = "1.0.0"
 lto = true
 codegen-units = 1
 panic = 'abort'
+
+# The profile that 'cargo dist' will build with
+[profile.dist]
+inherits = "release"
