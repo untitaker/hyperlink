@@ -8,6 +8,7 @@ on:
 
 jobs:
   gha:
-  - uses: untitaker/hyperlink@latest
-    with:
-      args: --help
+    steps:
+    - uses: untitaker/hyperlink@latest
+      with:
+        args: --help
