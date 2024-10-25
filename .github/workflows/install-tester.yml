@@ -1,0 +1,13 @@
+name: Test installations
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  gha:
+  - uses: untitaker/hyperlink@latest
+    with:
+      args: --help
