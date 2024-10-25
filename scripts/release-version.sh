@@ -16,6 +16,8 @@ echo ">>> Bumping version"
 readme_pattern='\(untitaker\/hyperlink[@:]\)'
 sed -i.bak "s/$readme_pattern$current_version/\\1$new_version/" README.md
 rm README.md.bak
+sed -i.bak "s/$readme_pattern$current_version/\\1$new_version/" .github/workflows/install-tester.yml
+rm .github/workflows/install-tester.yml.bak
 sed -i.bak "s/version = \"$current_version\"/version = \"$new_version\"/" Cargo.toml
 rm Cargo.toml.bak
 
