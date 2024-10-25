@@ -119,7 +119,7 @@ links. However, it can do more.
 
 ## External links
 
-Hyperlink does know how to check external links, but it gives you some tools to extract them.
+Hyperlink does not know how to check external links, but it gives you some tools to extract them.
 
 ```
 hyperlink dump-external-links build/
