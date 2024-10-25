@@ -11,6 +11,7 @@ ci = "github"
 installers = ["shell", "npm"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+publish-jobs = ["npm"]
 # A namespace to use when publishing this package to the npm registry
 npm-scope = "@untitaker"
 # Path that installers should place binaries in
