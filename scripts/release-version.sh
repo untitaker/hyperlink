@@ -38,7 +38,6 @@ set +x
 
 echo "things left to do:"
 echo "  cargo publish"
-echo "  npm publish"
 echo "  git push"
 echo "  git push origin $new_version"
 echo "  uncheck and check 'Publish to Marketplace' property of the new release"
