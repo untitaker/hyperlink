@@ -69,7 +69,7 @@ impl<P: Copy> LinkState<P> {
             LinkState::Defined => (),
             LinkState::Undefined(links) => match other {
                 LinkState::Defined => *self = LinkState::Defined,
-                LinkState::Undefined(links2) => links.extend(links2.into_iter()),
+                LinkState::Undefined(links2) => links.extend(links2),
             },
         }
     }
@@ -82,7 +82,7 @@ pub struct LocalLinksOnly<C> {
 
 pub fn canonicalize_local_link<'a, P>(arena: &Bump, mut link: Link<'a, P>) -> Option<Link<'a, P>> {
     if let Link::Uses(ref mut used_link) = link {
-        if is_external_link(&used_link.href.0.as_bytes()) {
+        if is_external_link(used_link.href.0.as_bytes()) {
             return None;
         }
 
@@ -90,11 +90,11 @@ pub fn canonicalize_local_link<'a, P>(arena: &Bump, mut link: Link<'a, P>) -> Op
             .href
             .0
             .find(&['?', '#'][..])
-            .unwrap_or_else(|| used_link.href.0.len());
+            .unwrap_or(used_link.href.0.len());
 
         // try calling canonicalize
         let path = used_link.path.to_str().unwrap_or("");
-        let mut href = BumpString::from_str_in(path, &arena);
+        let mut href = BumpString::from_str_in(path, arena);
         push_and_canonicalize(
             &mut href,
             &try_percent_decode(&used_link.href.0[..qs_start]),
