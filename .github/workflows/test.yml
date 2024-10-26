@@ -26,21 +26,21 @@ jobs:
             os: windows-latest
 
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/cache@v3
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
         if: runner.os != 'macOS'
         with:
           path: |
             ~/.cargo
             ./target/
           key: ${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-      - uses: actions-rs/toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           components: clippy
       - run: cargo build
       - run: cargo test
-      - uses: actions-rs/clippy-check@v1
+      - uses: clechasseur/rs-clippy-check@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-features
