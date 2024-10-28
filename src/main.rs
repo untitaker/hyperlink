@@ -27,29 +27,29 @@ static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
 static HTML_FILES: &[&str] = &["htm", "html"];
 
 #[derive(Parser)]
-#[clap(about, version)]
+#[command(about, version)]
 struct Cli {
     /// The static file path to check.
     ///
     /// This will be assumed to be the root path of your server as well, so
     /// href="/foo" will resolve to that folder's subfolder foo.
-    #[structopt(verbatim_doc_comment)]
+    #[arg(verbatim_doc_comment)]
     base_path: Option<PathBuf>,
 
     /// How many threads to use, default is to try and saturate CPU.
-    #[clap(short = 'j', long = "jobs")]
+    #[arg(short = 'j', long = "jobs")]
     threads: Option<usize>,
 
     /// Whether to check for valid anchor references.
-    #[clap(long = "check-anchors")]
+    #[arg(long = "check-anchors")]
     check_anchors: bool,
 
     /// Path to directory of markdown files to use for reporting errors.
-    #[clap(long = "sources")]
+    #[arg(long = "sources")]
     sources_path: Option<PathBuf>,
 
     /// Enable specialized output for GitHub actions.
-    #[clap(long = "github-actions")]
+    #[arg(long = "github-actions")]
     github_actions: bool,
 
     /// Utilities for development of hyperlink.
@@ -645,8 +645,7 @@ $"#,
             .code(1)
             .stdout(predicate::str::contains(
                 "\
-USAGE:
-    hyperlink [OPTIONS] [BASE_PATH] [SUBCOMMAND]\
+Usage: hyperlink [OPTIONS] [BASE_PATH] [COMMAND]\
 ",
             ));
     }
