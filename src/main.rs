@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use anyhow::{anyhow, Context, Error};
-use clap::Parser;
+use argh::FromArgs;
 use jwalk::WalkDirGeneric;
 use markdown::DocumentSource;
 use rayon::prelude::*;
@@ -26,72 +26,95 @@ use crate::urls::is_external_link;
 static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
 static HTML_FILES: &[&str] = &["htm", "html"];
 
-#[derive(Parser)]
-#[command(about, version)]
+#[derive(FromArgs, PartialEq, Debug)]
+/// A command-line tool to find broken links in your static site.
 struct Cli {
-    /// The static file path to check.
+    /// the static file path to check.
     ///
     /// This will be assumed to be the root path of your server as well, so
     /// href="/foo" will resolve to that folder's subfolder foo.
-    #[arg(verbatim_doc_comment)]
+    #[argh(positional)]
     base_path: Option<PathBuf>,
 
-    /// How many threads to use, default is to try and saturate CPU.
-    #[arg(short = 'j', long = "jobs")]
+    /// how many threads to use, default is to try and saturate CPU.
+    #[argh(option, short = 'j', long = "jobs")]
     threads: Option<usize>,
 
-    /// Whether to check for valid anchor references.
-    #[arg(long = "check-anchors")]
+    /// whether to check for valid anchor references.
+    #[argh(switch)]
     check_anchors: bool,
 
-    /// Path to directory of markdown files to use for reporting errors.
-    #[arg(long = "sources")]
+    /// path to directory of markdown files to use for reporting errors.
+    #[argh(option, long = "sources")]
     sources_path: Option<PathBuf>,
 
-    /// Enable specialized output for GitHub actions.
-    #[arg(long = "github-actions")]
+    /// enable specialized output for GitHub actions.
+    #[argh(switch)]
     github_actions: bool,
 
-    /// Utilities for development of hyperlink.
-    #[clap(subcommand)]
+    #[argh(subcommand)]
     subcommand: Option<Subcommand>,
 }
 
-#[derive(Parser)]
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand)]
 enum Subcommand {
-    /// Dump out internal data for markdown or html file. This is mostly useful to figure out why
-    /// a source file is not properly matched up with its target html file.
-    ///
-    /// NOTE: This is a tool for debugging and development.
-    ///
-    /// Usage:
-    ///
-    ///    vimdiff <(hyperlink dump-paragraphs src/foo.md) <(hyperlink dump-paragraphs public/foo.html)
-    ///
-    /// Each line on the left represents a Markdown paragraph. Each line on the right represents a
-    /// HTML paragraph. If there are minor formatting differences in two lines that are supposed to
-    /// match, you found the issue that needs fixing in `src/paragraph.rs`.
-    ///
-    /// There may also be entire lines missing from either side, in which case the logic for
-    /// detecting paragraphs needs adjustment, either in `src/markdown.rs` or `src/html.rs`.
-    ///
-    /// Note that the output for HTML omits paragraphs that do not have links, while for Markdown
-    /// all paragraphs are dumped.
-    DumpParagraphs { file: PathBuf },
+    DumpParagraphs(DumpParagraphs),
+    MatchAllParagraphs(MatchAllParagraphs),
+    DumpExternalLinks(DumpExternalLinks),
+}
 
-    /// Attempt to match up all paragraphs from the HTML folder with the Markdown folder and print
-    /// stats. This can be used to determine whether the source matching is going to be any good.
-    ///
-    /// NOTE: This is a tool for debugging and development.
-    MatchAllParagraphs {
-        base_path: PathBuf,
-        sources_path: PathBuf,
-    },
+#[derive(FromArgs, PartialEq, Debug)]
+/// Dump out internal data for markdown or html file. This is mostly useful to figure out why
+/// a source file is not properly matched up with its target html file.
+///
+/// NOTE: This is a tool for debugging and development.
+///
+/// Usage:
+///
+///    vimdiff <(hyperlink dump-paragraphs src/foo.md) <(hyperlink dump-paragraphs public/foo.html)
+///
+/// Each line on the left represents a Markdown paragraph. Each line on the right represents a
+/// HTML paragraph. If there are minor formatting differences in two lines that are supposed to
+/// match, you found the issue that needs fixing in `src/paragraph.rs`.
+///
+/// There may also be entire lines missing from either side, in which case the logic for
+/// detecting paragraphs needs adjustment, either in `src/markdown.rs` or `src/html.rs`.
+///
+/// Note that the output for HTML omits paragraphs that do not have links, while for Markdown
+/// all paragraphs are dumped.
+#[argh(subcommand, name = "dump-paragraphs")]
+struct DumpParagraphs {
+    #[argh(option)]
+    /// markdown or html file
+    file: PathBuf,
+}
 
-    /// Dump out a list and count of _external_ links.  hyperlink does not check external links,
-    /// but this subcommand can be used to get a summary of the external links that exist in your
-    /// site.
-    DumpExternalLinks { base_path: PathBuf },
+#[derive(FromArgs, PartialEq, Debug)]
+/// Attempt to match up all paragraphs from the HTML folder with the Markdown folder and print
+/// stats. This can be used to determine whether the source matching is going to be any good.
+///
+/// NOTE: This is a tool for debugging and development.
+#[argh(subcommand, name = "match-all-paragraphs")]
+struct MatchAllParagraphs {
+    #[argh(option)]
+    /// base path
+    base_path: PathBuf,
+
+    #[argh(option)]
+    /// sources
+    sources_path: PathBuf,
+}
+
+#[derive(FromArgs, PartialEq, Debug)]
+/// Dump out a list and count of _external_ links.  hyperlink does not check external links,
+/// but this subcommand can be used to get a summary of the external links that exist in your
+/// site.
+#[argh(subcommand, name = "dump-external-links")]
+struct DumpExternalLinks {
+    #[argh(option)]
+    /// base path
+    base_path: PathBuf,
 }
 
 fn main() -> Result<(), Error> {
@@ -102,7 +125,7 @@ fn main() -> Result<(), Error> {
         sources_path,
         github_actions,
         subcommand,
-    } = Cli::parse();
+    } = argh::from_env();
 
     rayon::ThreadPoolBuilder::new()
         // most of the work we do is kind of I/O bound. rayon assumes CPU-heavy workload. we could
@@ -114,16 +137,16 @@ fn main() -> Result<(), Error> {
         .unwrap();
 
     match subcommand {
-        Some(Subcommand::DumpParagraphs { file }) => {
+        Some(Subcommand::DumpParagraphs(DumpParagraphs { file })) => {
             return dump_paragraphs(file);
         }
-        Some(Subcommand::MatchAllParagraphs {
+        Some(Subcommand::MatchAllParagraphs(MatchAllParagraphs {
             base_path,
             sources_path,
-        }) => {
+        })) => {
             return match_all_paragraphs(base_path, sources_path);
         }
-        Some(Subcommand::DumpExternalLinks { base_path }) => {
+        Some(Subcommand::DumpExternalLinks(DumpExternalLinks { base_path })) => {
             return dump_external_links(base_path);
         }
         None => {}
@@ -132,13 +155,12 @@ fn main() -> Result<(), Error> {
     let base_path = match base_path {
         Some(base_path) => base_path,
         None => {
-            // Invalid invocation. Ultra hack to show help if no arguments are provided. Structopt
-            // does not seem to have a functional way to require either an argument or a
-            // subcommand. required_if etc don't actually work.
-            let help_message = Cli::try_parse_from(["hyperlink", "--help"])
+            // Invalid invocation. Ultra hack to show help if no arguments are provided.
+            let help_message = Cli::from_args(&["hyperlink"], &["--help"])
                 .map(|_| ())
-                .unwrap_err();
-            help_message.print()?;
+                .unwrap_err()
+                .output;
+            println!("{help_message}");
             process::exit(1);
         }
     };
@@ -645,7 +667,7 @@ $"#,
             .code(1)
             .stdout(predicate::str::contains(
                 "\
-Usage: hyperlink [OPTIONS] [BASE_PATH] [COMMAND]\
+Usage: hyperlink [<base_path>] [-j <jobs>] [--check-anchors] [--sources <sources>] [--github-actions] [<command>] [<args>]\
 ",
             ));
     }
