@@ -1,7 +1,10 @@
+use std::convert::Infallible;
+
 use bumpalo::collections::String as BumpString;
 use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
-use html5gum::{Emitter, Error, State};
+use html5gum::callbacks::Callback;
+use html5gum::callbacks::CallbackEvent;
 
 use crate::html::{DefinedLink, Document, Link, UsedLink};
 use crate::paragraph::ParagraphWalker;
@@ -20,20 +23,16 @@ fn try_normalize_href_value(input: &str) -> &str {
 pub struct ParserBuffers {
     current_tag_name: Vec<u8>,
     current_attribute_name: Vec<u8>,
-    current_attribute_value: Vec<u8>,
-    last_start_tag: Vec<u8>,
 }
 
 impl ParserBuffers {
     pub fn reset(&mut self) {
         self.current_tag_name.clear();
         self.current_attribute_name.clear();
-        self.current_attribute_value.clear();
-        self.last_start_tag.clear();
     }
 }
 
-pub struct HyperlinkEmitter<'a, 'l, 'd, P: ParagraphWalker> {
+pub struct HyperlinkVisitor<'a, 'l, 'd, P: ParagraphWalker> {
     pub paragraph_walker: P,
     pub arena: &'a Bump,
     pub document: &'d Document,
@@ -41,18 +40,78 @@ pub struct HyperlinkEmitter<'a, 'l, 'd, P: ParagraphWalker> {
     pub in_paragraph: bool,
     pub last_paragraph_i: usize,
     pub buffers: &'d mut ParserBuffers,
-    pub current_tag_is_closing: bool,
     pub check_anchors: bool,
 }
 
-impl<'a, 'l, 'd, P> HyperlinkEmitter<'a, 'l, 'd, P>
+impl<'a, 'l, 'd, P> Callback<Infallible> for HyperlinkVisitor<'a, 'l, 'd, P> where 'a: 'l, P: ParagraphWalker {
+    fn handle_event(&mut self, event: CallbackEvent<'_>) -> Option<Infallible> {
+        match event {
+            CallbackEvent::OpenStartTag { name } => {
+                self.buffers.current_tag_name.clear();
+                self.buffers.current_tag_name.extend(name);
+            }
+            CallbackEvent::AttributeName { name } => {
+                self.buffers.current_attribute_name.clear();
+                self.buffers.current_attribute_name.extend(name);
+            }
+            CallbackEvent::AttributeValue { value } => {
+                match (self.buffers.current_tag_name.as_slice(), self.buffers.current_attribute_name.as_slice()) {
+                    (b"link" | b"area" | b"a", b"href") => self.extract_used_link(value),
+                    (b"a", b"name") => self.extract_anchor_def(value),
+                    (b"img" | b"script" | b"iframe", b"src") => self.extract_used_link(value),
+                    (b"img", b"srcset") => self.extract_used_link_srcset(value),
+                    (b"object", b"data") => self.extract_used_link(value),
+                    (_, b"id") => self.extract_anchor_def(value),
+                    _ => (),
+                }
+
+                self.buffers.current_attribute_name.clear();
+            }
+            CallbackEvent::CloseStartTag { .. } => {
+                let is_paragraph_tag = !P::is_noop() && is_paragraph_tag(&self.buffers.current_tag_name);
+                if is_paragraph_tag {
+                    self.in_paragraph = true;
+                    self.last_paragraph_i = self.link_buf.len();
+                    self.paragraph_walker.finish_paragraph();
+                }
+                self.buffers.current_tag_name.clear();
+                self.buffers.current_attribute_name.clear();
+            }
+            CallbackEvent::EndTag { name } => {
+                let is_paragraph_tag = !P::is_noop() && is_paragraph_tag(name);
+                if is_paragraph_tag {
+                    let paragraph = self.paragraph_walker.finish_paragraph();
+                    if self.in_paragraph {
+                        for link in &mut self.link_buf[self.last_paragraph_i..] {
+                            if let Link::Uses(ref mut x) = link {
+                                x.paragraph = paragraph.clone();
+                            }
+                        }
+                        self.in_paragraph = false;
+                    }
+                    self.last_paragraph_i = self.link_buf.len();
+                }
+                self.buffers.current_tag_name.clear();
+            }
+            CallbackEvent::String { .. } => {}
+            // TODO: port should_emit_errors
+            CallbackEvent::Error(_) => {}
+            CallbackEvent::Comment { .. } => {}
+            CallbackEvent::Doctype { .. } => {}
+        }
+
+        None
+    }
+}
+
+impl<'a, 'l, 'd, P> HyperlinkVisitor<'a, 'l, 'd, P>
 where
     'a: 'l,
     P: ParagraphWalker,
 {
-    fn extract_used_link(&mut self) {
+    fn extract_used_link(&mut self, attribute_value: &[u8]) {
         let value = try_normalize_href_value(
-            std::str::from_utf8(&self.buffers.current_attribute_value).unwrap(),
+            std::str::from_utf8(&attribute_value).unwrap(),
         );
 
         self.link_buf.push(Link::Uses(UsedLink {
@@ -62,9 +121,9 @@ where
         }));
     }
 
-    fn extract_used_link_srcset(&mut self) {
+    fn extract_used_link_srcset(&mut self, attribute_value: &[u8]) {
         let value = try_normalize_href_value(
-            std::str::from_utf8(&self.buffers.current_attribute_value).unwrap(),
+            std::str::from_utf8(attribute_value).unwrap(),
         );
 
         // https://html.spec.whatwg.org/multipage/images.html#srcset-attribute
@@ -81,11 +140,11 @@ where
         }
     }
 
-    fn extract_anchor_def(&mut self) {
+    fn extract_anchor_def(&mut self, attribute_value: &[u8]) {
         if self.check_anchors {
             let mut href = BumpString::new_in(self.arena);
             let value = try_normalize_href_value(
-                std::str::from_utf8(&self.buffers.current_attribute_value).unwrap(),
+                std::str::from_utf8(&attribute_value).unwrap(),
             );
             href.push('#');
             href.push_str(value);
@@ -96,139 +155,4 @@ where
         }
     }
 
-    fn flush_old_attribute(&mut self) {
-        match (
-            self.buffers.current_tag_name.as_slice(),
-            self.buffers.current_attribute_name.as_slice(),
-        ) {
-            (b"link" | b"area" | b"a", b"href") => self.extract_used_link(),
-            (b"a", b"name") => self.extract_anchor_def(),
-            (b"img" | b"script" | b"iframe", b"src") => self.extract_used_link(),
-            (b"img", b"srcset") => self.extract_used_link_srcset(),
-            (b"object", b"data") => self.extract_used_link(),
-            (_, b"id") => self.extract_anchor_def(),
-            _ => (),
-        }
-
-        self.buffers.current_attribute_name.clear();
-        self.buffers.current_attribute_value.clear();
-    }
-}
-
-impl<'a, 'l, 'd, P> Emitter for HyperlinkEmitter<'a, 'l, 'd, P>
-where
-    'a: 'l,
-    P: ParagraphWalker,
-{
-    type Token = ();
-
-    fn set_last_start_tag(&mut self, last_start_tag: Option<&[u8]>) {
-        self.buffers.last_start_tag.clear();
-        self.buffers
-            .last_start_tag
-            .extend(last_start_tag.unwrap_or_default());
-    }
-
-    fn pop_token(&mut self) -> Option<()> {
-        None
-    }
-
-    fn emit_string(&mut self, c: &[u8]) {
-        if !P::is_noop() && self.in_paragraph {
-            self.paragraph_walker.update(c);
-        }
-    }
-
-    fn init_start_tag(&mut self) {
-        self.buffers.current_tag_name.clear();
-        self.current_tag_is_closing = false;
-    }
-
-    fn init_end_tag(&mut self) {
-        self.buffers.current_tag_name.clear();
-        self.current_tag_is_closing = true;
-    }
-
-    fn emit_current_tag(&mut self) -> Option<State> {
-        self.flush_old_attribute();
-
-        self.buffers.last_start_tag.clear();
-
-        let is_paragraph_tag = !P::is_noop() && is_paragraph_tag(&self.buffers.current_tag_name);
-
-        if !self.current_tag_is_closing {
-            self.buffers
-                .last_start_tag
-                .extend(&self.buffers.current_tag_name);
-
-            if is_paragraph_tag {
-                self.in_paragraph = true;
-                self.last_paragraph_i = self.link_buf.len();
-                self.paragraph_walker.finish_paragraph();
-            }
-        } else if is_paragraph_tag {
-            let paragraph = self.paragraph_walker.finish_paragraph();
-            if self.in_paragraph {
-                for link in &mut self.link_buf[self.last_paragraph_i..] {
-                    match link {
-                        Link::Uses(ref mut x) => {
-                            x.paragraph = paragraph.clone();
-                        }
-                        Link::Defines(_) => (),
-                    }
-                }
-                self.in_paragraph = false;
-            }
-            self.last_paragraph_i = self.link_buf.len();
-        }
-
-        self.buffers.current_tag_name.clear();
-        html5gum::naive_next_state(&self.buffers.last_start_tag)
-    }
-
-    fn set_self_closing(&mut self) {
-        if !P::is_noop() && is_paragraph_tag(&self.buffers.current_tag_name) {
-            self.in_paragraph = false;
-        }
-    }
-
-    fn push_tag_name(&mut self, s: &[u8]) {
-        self.buffers.current_tag_name.extend(s);
-    }
-
-    fn init_attribute(&mut self) {
-        self.flush_old_attribute();
-    }
-
-    fn push_attribute_name(&mut self, s: &[u8]) {
-        self.buffers.current_attribute_name.extend(s);
-    }
-
-    fn push_attribute_value(&mut self, s: &[u8]) {
-        self.buffers.current_attribute_value.extend(s);
-    }
-
-    fn current_is_appropriate_end_tag_token(&mut self) -> bool {
-        self.current_tag_is_closing
-            && !self.buffers.current_tag_name.is_empty()
-            && self.buffers.current_tag_name == self.buffers.last_start_tag
-    }
-
-    fn emit_current_comment(&mut self) {}
-    fn emit_current_doctype(&mut self) {}
-    fn emit_eof(&mut self) {}
-    fn emit_error(&mut self, _: Error) {}
-    #[inline]
-    fn should_emit_errors(&mut self) -> bool {
-        false
-    }
-    fn init_comment(&mut self) {}
-    fn init_doctype(&mut self) {}
-    fn push_comment(&mut self, _: &[u8]) {}
-    fn push_doctype_name(&mut self, _: &[u8]) {}
-    fn push_doctype_public_identifier(&mut self, _: &[u8]) {}
-    fn push_doctype_system_identifier(&mut self, _: &[u8]) {}
-    fn set_doctype_public_identifier(&mut self, _: &[u8]) {}
-    fn set_doctype_system_identifier(&mut self, _: &[u8]) {}
-    fn set_force_quirks(&mut self) {}
 }

@@ -11,6 +11,7 @@ use std::sync::Arc;
 use anyhow::Error;
 use bumpalo::collections::String as BumpString;
 use bumpalo::collections::Vec as BumpVec;
+use html5gum::callbacks::CallbackEmitter;
 use html5gum::{IoReader, Tokenizer};
 
 use crate::paragraph::ParagraphWalker;
@@ -331,7 +332,7 @@ impl Document {
         let mut link_buf = BumpVec::new_in(&doc_buf.arena);
 
         {
-            let emitter = parser::HyperlinkEmitter {
+            let emitter = parser::HyperlinkVisitor {
                 paragraph_walker: P::new(),
                 arena: &doc_buf.arena,
                 document: self,
@@ -339,9 +340,10 @@ impl Document {
                 in_paragraph: false,
                 last_paragraph_i: 0,
                 buffers: &mut doc_buf.parser_buffers,
-                current_tag_is_closing: false,
                 check_anchors,
             };
+            let mut emitter = CallbackEmitter::new(emitter);
+            emitter.naively_switch_states(true);
             let ioreader = IoReader::new_with_buffer(read, doc_buf.html_read_buffer.as_mut());
             let reader = Tokenizer::new_with_emitter(ioreader, emitter);
 
