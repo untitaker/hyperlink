@@ -19,5 +19,5 @@ runs:
       shell: bash
 
     - name: Run Hyperlink
-      run: ~/.cargo/bin/hyperlink ${{ inputs.args }} --github-actions
+      run: ~/.cargo/bin/hyperlink --github-actions ${{ inputs.args }}
       shell: bash
