@@ -29,28 +29,32 @@ static HTML_FILES: &[&str] = &["htm", "html"];
 #[derive(FromArgs, PartialEq, Debug)]
 /// A command-line tool to find broken links in your static site.
 struct Cli {
-    /// the static file path to check.
+    /// the static file path to check
     ///
     /// This will be assumed to be the root path of your server as well, so
-    /// href="/foo" will resolve to that folder's subfolder foo.
+    /// href="/foo" will resolve to that folder's subfolder foo
     #[argh(positional)]
     base_path: Option<PathBuf>,
 
-    /// how many threads to use, default is to try and saturate CPU.
+    /// how many threads to use, default is to try and saturate CPU
     #[argh(option, short = 'j', long = "jobs")]
     threads: Option<usize>,
 
-    /// whether to check for valid anchor references.
+    /// whether to check for valid anchor references
     #[argh(switch)]
     check_anchors: bool,
 
-    /// path to directory of markdown files to use for reporting errors.
+    /// path to directory of markdown files to use for reporting errors
     #[argh(option, long = "sources")]
     sources_path: Option<PathBuf>,
 
-    /// enable specialized output for GitHub actions.
+    /// enable specialized output for GitHub actions
     #[argh(switch)]
     github_actions: bool,
+
+    /// print version information and exit
+    #[argh(switch, short = 'V')]
+    version: bool,
 
     #[argh(subcommand)]
     subcommand: Option<Subcommand>,
@@ -125,7 +129,13 @@ fn main() -> Result<(), Error> {
         sources_path,
         github_actions,
         subcommand,
+        version,
     } = argh::from_env();
+
+    if version {
+        println!("hyperlink {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
 
     rayon::ThreadPoolBuilder::new()
         // most of the work we do is kind of I/O bound. rayon assumes CPU-heavy workload. we could
@@ -659,6 +669,17 @@ $"#,
     }
 
     #[test]
+    fn test_version() {
+        let mut cmd = Command::cargo_bin("hyperlink").unwrap();
+        cmd.arg("--version");
+
+        cmd.assert()
+            .success()
+            .code(0)
+            .stdout(predicate::str::contains("hyperlink "));
+    }
+
+    #[test]
     fn test_no_args() {
         let mut cmd = Command::cargo_bin("hyperlink").unwrap();
 
@@ -667,7 +688,7 @@ $"#,
             .code(1)
             .stdout(predicate::str::contains(
                 "\
-Usage: hyperlink [<base_path>] [-j <jobs>] [--check-anchors] [--sources <sources>] [--github-actions] [<command>] [<args>]\
+Usage: hyperlink [<base_path>] [-j <jobs>] [--check-anchors] [--sources <sources>] [--github-actions] [-V] [<command>] [<args>]\
 ",
             ));
     }
