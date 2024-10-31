@@ -10,6 +10,6 @@ jobs:
   gha:
     runs-on: "ubuntu-20.04"
     steps:
-    - uses: untitaker/hyperlink@0.1.42
+    - uses: untitaker/hyperlink@0.1.43
       with:
         args: --help
