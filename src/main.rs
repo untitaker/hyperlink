@@ -690,7 +690,8 @@ $"#,
             .code(1)
             .stdout(predicate::str::contains(
                 "\
-Usage: hyperlink [<base_path>] [-j <jobs>] [--check-anchors] [--sources <sources>] [--github-actions] [-V] [<command>] [<args>]\
+Usage: [-V] [-j=ARG] (COMMAND ... | [--check-anchors] [--sources=ARG] [--github-actions] [BASE-PATH
+])
 ",
             ));
     }
