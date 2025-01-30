@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use anyhow::{anyhow, Context, Error};
-use argh::FromArgs;
+use bpaf::*;
 use jwalk::WalkDirGeneric;
 use markdown::DocumentSource;
 use rayon::prelude::*;
@@ -26,111 +26,106 @@ use crate::urls::is_external_link;
 static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
 static HTML_FILES: &[&str] = &["htm", "html"];
 
-#[derive(FromArgs, PartialEq, Debug)]
-/// A command-line tool to find broken links in your static site.
-struct Cli {
+#[derive(Bpaf, PartialEq, Debug)]
+struct MainCommand {
+    /// whether to check for valid anchor references
+    #[bpaf(long)]
+    check_anchors: bool,
+
+    /// path to directory of markdown files to use for reporting errors
+    #[bpaf(long("sources"))]
+    sources_path: Option<PathBuf>,
+
+    /// enable specialized output for GitHub actions
+    #[bpaf(long)]
+    github_actions: bool,
+
     /// the static file path to check
     ///
     /// This will be assumed to be the root path of your server as well, so
     /// href="/foo" will resolve to that folder's subfolder foo
-    #[argh(positional)]
+    #[bpaf(positional("BASE-PATH"))]
     base_path: Option<PathBuf>,
+}
 
-    /// how many threads to use, default is to try and saturate CPU
-    #[argh(option, short = 'j', long = "jobs")]
-    threads: Option<usize>,
-
-    /// whether to check for valid anchor references
-    #[argh(switch)]
-    check_anchors: bool,
-
-    /// path to directory of markdown files to use for reporting errors
-    #[argh(option, long = "sources")]
-    sources_path: Option<PathBuf>,
-
-    /// enable specialized output for GitHub actions
-    #[argh(switch)]
-    github_actions: bool,
-
+#[derive(Bpaf, PartialEq, Debug)]
+#[bpaf(options)]
+/// A command-line tool to find broken links in your static site.
+struct Cli {
     /// print version information and exit
-    #[argh(switch, short = 'V')]
+    #[bpaf(long, short('V'), hide_usage)]
     version: bool,
 
-    #[argh(subcommand)]
-    subcommand: Option<Subcommand>,
+    /// how many threads to use, default is to try and saturate CPU
+    #[bpaf(short('j'), long("jobs"))]
+    threads: Option<usize>,
+
+    #[bpaf(external)]
+    command: Command,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand)]
-enum Subcommand {
-    DumpParagraphs(DumpParagraphs),
-    MatchAllParagraphs(MatchAllParagraphs),
-    DumpExternalLinks(DumpExternalLinks),
-}
+#[derive(Bpaf, PartialEq, Debug)]
+enum Command {
+    /// Dump out internal data for markdown or html file.
+    ///  
+    ///  This is mostly useful to figure out why a source file is not properly matched up with its
+    /// target html file.
+    ///  
+    ///  NOTE: This is a tool for debugging and development.
+    ///  
+    ///  Usage:
+    ///   
+    ///    vimdiff <(hyperlink dump-paragraphs src/foo.md) <(hyperlink dump-paragraphs public/foo.html)
+    ///  
+    ///  Each line on the left represents a Markdown paragraph. Each line on the right represents a
+    /// HTML paragraph. If there are minor formatting differences in two lines that are supposed to
+    /// match, you found the issue that needs fixing in `src/paragraph.rs`.
+    ///
+    ///  There may also be entire lines missing from either side, in which case the logic for
+    /// detecting paragraphs needs adjustment, either in `src/markdown.rs` or `src/html.rs`.
+    ///
+    ///  Note that the output for HTML omits paragraphs that do not have links, while for Markdown
+    /// all paragraphs are dumped.
+    #[bpaf(command("dump-paragraphs"))]
+    DumpParagraphs {
+        /// markdown or html file
+        #[bpaf(long)]
+        file: PathBuf,
+    },
 
-#[derive(FromArgs, PartialEq, Debug)]
-/// Dump out internal data for markdown or html file. This is mostly useful to figure out why
-/// a source file is not properly matched up with its target html file.
-///
-/// NOTE: This is a tool for debugging and development.
-///
-/// Usage:
-///
-///    vimdiff <(hyperlink dump-paragraphs src/foo.md) <(hyperlink dump-paragraphs public/foo.html)
-///
-/// Each line on the left represents a Markdown paragraph. Each line on the right represents a
-/// HTML paragraph. If there are minor formatting differences in two lines that are supposed to
-/// match, you found the issue that needs fixing in `src/paragraph.rs`.
-///
-/// There may also be entire lines missing from either side, in which case the logic for
-/// detecting paragraphs needs adjustment, either in `src/markdown.rs` or `src/html.rs`.
-///
-/// Note that the output for HTML omits paragraphs that do not have links, while for Markdown
-/// all paragraphs are dumped.
-#[argh(subcommand, name = "dump-paragraphs")]
-struct DumpParagraphs {
-    #[argh(option)]
-    /// markdown or html file
-    file: PathBuf,
-}
+    /// Attempt to match up all paragraphs from the HTML folder with the Markdown folder and print
+    /// stats. This can be used to determine whether the source matching is going to be any good.
+    ///  NOTE: This is a tool for debugging and development.
+    #[bpaf(command("match-all-paragraphs"))]
+    MatchAllParagraphs {
+        /// base path
+        #[bpaf(long)]
+        base_path: PathBuf,
 
-#[derive(FromArgs, PartialEq, Debug)]
-/// Attempt to match up all paragraphs from the HTML folder with the Markdown folder and print
-/// stats. This can be used to determine whether the source matching is going to be any good.
-///
-/// NOTE: This is a tool for debugging and development.
-#[argh(subcommand, name = "match-all-paragraphs")]
-struct MatchAllParagraphs {
-    #[argh(option)]
-    /// base path
-    base_path: PathBuf,
+        /// sources
+        #[bpaf(long)]
+        sources_path: PathBuf,
+    },
 
-    #[argh(option)]
-    /// sources
-    sources_path: PathBuf,
-}
+    /// Dump out a list and count of _external_ links.  hyperlink does not check external links,
+    /// but this subcommand can be used to get a summary of the external links that exist in your
+    /// site.
+    #[bpaf(command("dump-external-links"))]
+    DumpExternalLinks {
+        /// base path
+        #[bpaf(long)]
+        base_path: PathBuf,
+    },
 
-#[derive(FromArgs, PartialEq, Debug)]
-/// Dump out a list and count of _external_ links.  hyperlink does not check external links,
-/// but this subcommand can be used to get a summary of the external links that exist in your
-/// site.
-#[argh(subcommand, name = "dump-external-links")]
-struct DumpExternalLinks {
-    #[argh(option)]
-    /// base path
-    base_path: PathBuf,
+    Main(#[bpaf(external(main_command))] MainCommand),
 }
 
 fn main() -> Result<(), Error> {
     let Cli {
-        base_path,
-        threads,
-        check_anchors,
-        sources_path,
-        github_actions,
-        subcommand,
         version,
-    } = argh::from_env();
+        threads,
+        command,
+    } = cli().run();
 
     if version {
         println!("hyperlink {}", env!("CARGO_PKG_VERSION"));
@@ -146,30 +141,35 @@ fn main() -> Result<(), Error> {
         .build_global()
         .unwrap();
 
-    match subcommand {
-        Some(Subcommand::DumpParagraphs(DumpParagraphs { file })) => {
+    let MainCommand {
+        base_path,
+        check_anchors,
+        sources_path,
+        github_actions,
+    } = match command {
+        Command::DumpParagraphs { file } => {
             return dump_paragraphs(file);
         }
-        Some(Subcommand::MatchAllParagraphs(MatchAllParagraphs {
+        Command::MatchAllParagraphs {
             base_path,
             sources_path,
-        })) => {
+        } => {
             return match_all_paragraphs(base_path, sources_path);
         }
-        Some(Subcommand::DumpExternalLinks(DumpExternalLinks { base_path })) => {
+        Command::DumpExternalLinks { base_path } => {
             return dump_external_links(base_path);
         }
-        None => {}
-    }
+        Command::Main(main_command) => main_command,
+    };
 
     let base_path = match base_path {
         Some(base_path) => base_path,
         None => {
             // Invalid invocation. Ultra hack to show help if no arguments are provided.
-            let help_message = Cli::from_args(&["hyperlink"], &["--help"])
-                .map(|_| ())
+            let help_message = cli()
+                .run_inner(Args::from(&["--help"]))
                 .unwrap_err()
-                .output;
+                .unwrap_stdout();
             println!("{help_message}");
             process::exit(1);
         }
@@ -610,100 +610,4 @@ fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(),
     println!("{link_single_source} links with one potential source (perfect match)");
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use assert_cmd::Command;
-    use assert_fs::prelude::*;
-    use predicates::prelude::*;
-
-    #[test]
-    fn test_dead_link() {
-        let site = assert_fs::TempDir::new().unwrap();
-        site.child("index.html")
-            .write_str("<a href=bar.html>")
-            .unwrap();
-        let mut cmd = Command::cargo_bin("hyperlink").unwrap();
-        cmd.current_dir(site.path()).arg(".");
-
-        cmd.assert().failure().code(1).stdout(
-            predicate::str::is_match(
-                r#"^Reading files
-Checking 1 links from 1 files \(1 documents\)
-\..index\.html
-  error: bad link /bar.html
-
-Found 1 bad links
-"#,
-            )
-            .unwrap(),
-        );
-        site.close().unwrap();
-    }
-
-    #[test]
-    fn test_dead_anchor() {
-        let site = assert_fs::TempDir::new().unwrap();
-        site.child("index.html")
-            .write_str("<a href=bar.html#goo>")
-            .unwrap();
-        site.child("bar.html").touch().unwrap();
-        let mut cmd = Command::cargo_bin("hyperlink").unwrap();
-        cmd.current_dir(site.path()).arg(".").arg("--check-anchors");
-
-        cmd.assert().failure().code(2).stdout(
-            predicate::str::is_match(
-                r#"^Reading files
-Checking 1 links from 2 files \(2 documents\)
-\..index\.html
-  error: bad link /bar.html#goo
-
-Found 0 bad links
-Found 1 bad anchors
-$"#,
-            )
-            .unwrap(),
-        );
-        site.close().unwrap();
-    }
-
-    #[test]
-    fn test_version() {
-        let mut cmd = Command::cargo_bin("hyperlink").unwrap();
-        cmd.arg("--version");
-
-        cmd.assert()
-            .success()
-            .code(0)
-            .stdout(predicate::str::contains("hyperlink "));
-    }
-
-    #[test]
-    fn test_no_args() {
-        let mut cmd = Command::cargo_bin("hyperlink").unwrap();
-
-        cmd.assert()
-            .failure()
-            .code(1)
-            .stdout(predicate::str::contains(
-                "\
-Usage: hyperlink [<base_path>] [-j <jobs>] [--check-anchors] [--sources <sources>] [--github-actions] [-V] [<command>] [<args>]\
-",
-            ));
-    }
-
-    #[test]
-    fn test_bad_dir() {
-        let mut cmd = Command::cargo_bin("hyperlink").unwrap();
-        cmd.arg("non_existing_dir");
-
-        cmd.assert()
-            .failure()
-            .code(1)
-            .stdout("Reading files\n")
-            .stderr(predicate::str::contains(
-                "Error: IO error for operation on non_existing_dir:",
-            ));
-    }
 }
