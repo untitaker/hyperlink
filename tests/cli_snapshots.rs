@@ -40,6 +40,10 @@ fn test_no_args() {
 
 #[test]
 fn test_dump_paragraphs_help() {
+    let mut settings = insta::Settings::clone_current();
+    settings.add_filter(r"hyperlink(\.exe)?", "[hyperlink bin]");
+    let _guard = settings.bind_to_scope();
+
     assert_cmd_snapshot!(cli().arg("dump-paragraphs").arg("--help"), @r###"
     success: true
     exit_code: 0
@@ -53,13 +57,13 @@ fn test_dump_paragraphs_help() {
 
     Usage:
      
-      vimdiff <(hyperlink dump-paragraphs src/foo.md) <(hyperlink dump-paragraphs public/foo.html)
+      vimdiff <([hyperlink bin] dump-paragraphs src/foo.md) <([hyperlink bin] dump-paragraphs public/foo.html)
 
     Each line on the left represents a Markdown paragraph. Each line on the right represents a HTML
     paragraph. If there are minor formatting differences in two lines that are supposed to match, you
     found the issue that needs fixing in `src/paragraph.rs`.
 
-    Usage: hyperlink dump-paragraphs --file=ARG
+    Usage: [hyperlink bin] dump-paragraphs --file=ARG
 
     Available options:
             --file=ARG  markdown or html file
