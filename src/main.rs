@@ -52,7 +52,6 @@ struct MainCommand {
 #[bpaf(options)]
 /// A command-line tool to find broken links in your static site.
 struct Cli {
-    // TODO: use bpaf-native version option
     /// print version information and exit
     #[bpaf(long, short('V'), hide_usage)]
     version: bool,
