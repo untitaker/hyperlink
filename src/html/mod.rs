@@ -162,7 +162,7 @@ pub fn try_percent_decode(input: &str) -> Cow<'_, str> {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Href<'a>(pub &'a str);
 
-impl<'a> Href<'a> {
+impl Href<'_> {
     pub fn without_anchor(&self) -> Href<'_> {
         let mut s = self.0;
 
@@ -174,7 +174,7 @@ impl<'a> Href<'a> {
     }
 }
 
-impl<'a> fmt::Display for Href<'a> {
+impl fmt::Display for Href<'_> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(fmt)
     }
@@ -198,7 +198,7 @@ pub enum Link<'a, P> {
     Defines(DefinedLink<'a>),
 }
 
-impl<'a, P> Link<'a, P> {
+impl<P> Link<'_, P> {
     pub fn into_paragraph(self) -> Option<P> {
         match self {
             Link::Uses(UsedLink { paragraph, .. }) => paragraph,
