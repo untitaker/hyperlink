@@ -27,12 +27,7 @@ static MARKDOWN_FILES: &[&str] = &["md", "mdx"];
 static HTML_FILES: &[&str] = &["htm", "html"];
 
 #[derive(Bpaf, PartialEq, Debug)]
-/// A command-line tool to find broken links in your static site.
 struct MainCommand {
-    /// how many threads to use, default is to try and saturate CPU
-    #[bpaf(short('j'), long("jobs"))]
-    threads: Option<usize>,
-
     /// whether to check for valid anchor references
     #[bpaf(long)]
     check_anchors: bool,
@@ -45,10 +40,6 @@ struct MainCommand {
     #[bpaf(long)]
     github_actions: bool,
 
-    /// print version information and exit
-    #[bpaf(long, short('V'))]
-    version: bool,
-
     /// the static file path to check
     ///
     /// This will be assumed to be the root path of your server as well, so
@@ -57,9 +48,25 @@ struct MainCommand {
     base_path: Option<PathBuf>,
 }
 
-#[derive(Debug, PartialEq, Bpaf)]
+#[derive(Bpaf, PartialEq, Debug)]
 #[bpaf(options)]
-enum Cli {
+/// A command-line tool to find broken links in your static site.
+struct Cli {
+    // TODO: use bpaf-native version option
+    /// print version information and exit
+    #[bpaf(long, short('V'))]
+    version: bool,
+
+    /// how many threads to use, default is to try and saturate CPU
+    #[bpaf(short('j'), long("jobs"))]
+    threads: Option<usize>,
+
+    #[bpaf(external)]
+    command: Command,
+}
+
+#[derive(Bpaf, PartialEq, Debug)]
+enum Command {
     /// Dump out internal data for markdown or html file.
     ///
     /// This is mostly useful to figure out why a source file is not properly matched up with its
@@ -116,35 +123,46 @@ enum Cli {
 }
 
 fn main() -> Result<(), Error> {
-    let args = cli().run();
-
-    let MainCommand {
-        base_path,
-        threads,
-        check_anchors,
-        sources_path,
-        github_actions,
+    let Cli {
         version,
-    } = match args {
-        Cli::DumpParagraphs { file } => {
-            return dump_paragraphs(file);
-        }
-        Cli::MatchAllParagraphs {
-            base_path,
-            sources_path,
-        } => {
-            return match_all_paragraphs(base_path, sources_path);
-        }
-        Cli::DumpExternalLinks { base_path } => {
-            return dump_external_links(base_path);
-        }
-        Cli::Main(main_command) => main_command,
-    };
+        threads,
+        command
+    }= cli().run();
 
     if version {
         println!("hyperlink {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
+
+    rayon::ThreadPoolBuilder::new()
+        // most of the work we do is kind of I/O bound. rayon assumes CPU-heavy workload. we could
+        // look into tokio-uring at some point, but it seems like a hassle wrt ownership
+        //
+        // hyperlink seems to deadlock on less than 1 thread.
+        .num_threads(cmp::max(2, threads.unwrap_or_else(|| 4 * num_cpus::get())))
+        .build_global()
+        .unwrap();
+
+    let MainCommand {
+        base_path,
+        check_anchors,
+        sources_path,
+        github_actions,
+    } = match command {
+        Command::DumpParagraphs { file } => {
+            return dump_paragraphs(file);
+        }
+        Command::MatchAllParagraphs {
+            base_path,
+            sources_path,
+        } => {
+            return match_all_paragraphs(base_path, sources_path);
+        }
+        Command::DumpExternalLinks { base_path } => {
+            return dump_external_links(base_path);
+        }
+        Command::Main(main_command) => main_command,
+    };
 
     let base_path = match base_path {
         Some(base_path) => base_path,
@@ -158,15 +176,6 @@ fn main() -> Result<(), Error> {
             process::exit(1);
         }
     };
-
-    rayon::ThreadPoolBuilder::new()
-        // most of the work we do is kind of I/O bound. rayon assumes CPU-heavy workload. we could
-        // look into tokio-uring at some point, but it seems like a hassle wrt ownership
-        //
-        // hyperlink seems to deadlock on less than 1 thread.
-        .num_threads(cmp::max(2, threads.unwrap_or_else(|| 4 * num_cpus::get())))
-        .build_global()
-        .unwrap();
 
     if sources_path.is_some() {
         check_links::<ParagraphHasher>(base_path, check_anchors, sources_path, github_actions)
