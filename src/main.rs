@@ -28,7 +28,7 @@ static HTML_FILES: &[&str] = &["htm", "html"];
 
 #[derive(Bpaf, PartialEq, Debug)]
 /// A command-line tool to find broken links in your static site.
-struct Cli {
+struct MainCommand {
     /// how many threads to use, default is to try and saturate CPU
     #[bpaf(short('j'), long("jobs"))]
     threads: Option<usize>,
@@ -53,16 +53,13 @@ struct Cli {
     ///
     /// This will be assumed to be the root path of your server as well, so
     /// href="/foo" will resolve to that folder's subfolder foo
-    #[bpaf(optional, positional("BASE-PATH"))]
+    #[bpaf(positional("BASE-PATH"))]
     base_path: Option<PathBuf>,
-
-    #[bpaf(external, optional)]
-    subcommand: Option<Subcommand>
 }
 
 #[derive(Debug, PartialEq, Bpaf)]
-#[bpaf(command)]
-enum Subcommand {
+#[bpaf(options)]
+enum Cli {
     /// Dump out internal data for markdown or html file.
     ///
     /// This is mostly useful to figure out why a source file is not properly matched up with its
@@ -113,34 +110,35 @@ enum Subcommand {
         /// base path
         #[bpaf(long)]
         base_path: PathBuf,
-    }
+    },
+
+    Main(#[bpaf(external(main_command))] MainCommand),
 }
 
 fn main() -> Result<(), Error> {
-    let Cli {
+    let args = cli().run();
+
+    let MainCommand {
         base_path,
         threads,
         check_anchors,
         sources_path,
         github_actions,
         version,
-        subcommand
-    } = cli().run();
-
-    match subcommand {
-        Some(Subcommand::DumpParagraphs { file }) => {
+    } = match args {
+        Cli::DumpParagraphs { file } => {
             return dump_paragraphs(file);
         }
-        Some(Subcommand::MatchAllParagraphs {
+        Cli::MatchAllParagraphs {
             base_path,
             sources_path,
-        }) => {
+        } => {
             return match_all_paragraphs(base_path, sources_path);
         }
-        Some(Subcommand::DumpExternalLinks { base_path }) => {
+        Cli::DumpExternalLinks { base_path } => {
             return dump_external_links(base_path);
         }
-        None => (),
+        Cli::Main(main_command) => main_command,
     };
 
     if version {
@@ -153,7 +151,6 @@ fn main() -> Result<(), Error> {
         None => {
             // Invalid invocation. Ultra hack to show help if no arguments are provided.
             let help_message = cli()
-                .to_options()
                 .run_inner(Args::from(&["--help"]))
                 .unwrap_err()
                 .unwrap_stdout();
