@@ -45,7 +45,7 @@ pub struct HyperlinkEmitter<'a, 'l, 'd, P: ParagraphWalker> {
     pub check_anchors: bool,
 }
 
-impl<'a, 'l, 'd, P> HyperlinkEmitter<'a, 'l, 'd, P>
+impl<'a, 'l, P> HyperlinkEmitter<'a, 'l, '_, P>
 where
     'a: 'l,
     P: ParagraphWalker,
@@ -115,7 +115,7 @@ where
     }
 }
 
-impl<'a, 'l, 'd, P> Emitter for HyperlinkEmitter<'a, 'l, 'd, P>
+impl<'a, 'l, P> Emitter for HyperlinkEmitter<'a, 'l, '_, P>
 where
     'a: 'l,
     P: ParagraphWalker,
