@@ -112,7 +112,7 @@ enum Cli {
         base_path: PathBuf,
     },
 
-    Main(#[bpaf(external(main_command))] MainCommand)
+    Main(#[bpaf(external(main_command))] MainCommand),
 }
 
 fn main() -> Result<(), Error> {
@@ -150,7 +150,10 @@ fn main() -> Result<(), Error> {
         Some(base_path) => base_path,
         None => {
             // Invalid invocation. Ultra hack to show help if no arguments are provided.
-            let help_message = cli().run_inner(Args::from(&["--help"])).unwrap_err().unwrap_stdout();
+            let help_message = cli()
+                .run_inner(Args::from(&["--help"]))
+                .unwrap_err()
+                .unwrap_stdout();
             println!("{help_message}");
             process::exit(1);
         }
