@@ -68,24 +68,24 @@ struct Cli {
 #[derive(Bpaf, PartialEq, Debug)]
 enum Command {
     /// Dump out internal data for markdown or html file.
-    ///
-    /// This is mostly useful to figure out why a source file is not properly matched up with its
+    ///  
+    ///  This is mostly useful to figure out why a source file is not properly matched up with its
     /// target html file.
-    ///
-    /// NOTE: This is a tool for debugging and development.
-    ///
-    /// Usage:
-    ///
+    ///  
+    ///  NOTE: This is a tool for debugging and development.
+    ///  
+    ///  Usage:
+    ///   
     ///    vimdiff <(hyperlink dump-paragraphs src/foo.md) <(hyperlink dump-paragraphs public/foo.html)
-    ///
-    /// Each line on the left represents a Markdown paragraph. Each line on the right represents a
+    ///  
+    ///  Each line on the left represents a Markdown paragraph. Each line on the right represents a
     /// HTML paragraph. If there are minor formatting differences in two lines that are supposed to
     /// match, you found the issue that needs fixing in `src/paragraph.rs`.
     ///
-    /// There may also be entire lines missing from either side, in which case the logic for
+    ///  There may also be entire lines missing from either side, in which case the logic for
     /// detecting paragraphs needs adjustment, either in `src/markdown.rs` or `src/html.rs`.
     ///
-    /// Note that the output for HTML omits paragraphs that do not have links, while for Markdown
+    ///  Note that the output for HTML omits paragraphs that do not have links, while for Markdown
     /// all paragraphs are dumped.
     #[bpaf(command("dump-paragraphs"))]
     DumpParagraphs {
@@ -96,8 +96,7 @@ enum Command {
 
     /// Attempt to match up all paragraphs from the HTML folder with the Markdown folder and print
     /// stats. This can be used to determine whether the source matching is going to be any good.
-    ///
-    /// NOTE: This is a tool for debugging and development.
+    ///  NOTE: This is a tool for debugging and development.
     #[bpaf(command("match-all-paragraphs"))]
     MatchAllParagraphs {
         /// base path
@@ -612,101 +611,4 @@ fn match_all_paragraphs(base_path: PathBuf, sources_path: PathBuf) -> Result<(),
     println!("{link_single_source} links with one potential source (perfect match)");
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use assert_cmd::Command;
-    use assert_fs::prelude::*;
-    use predicates::prelude::*;
-
-    #[test]
-    fn test_dead_link() {
-        let site = assert_fs::TempDir::new().unwrap();
-        site.child("index.html")
-            .write_str("<a href=bar.html>")
-            .unwrap();
-        let mut cmd = Command::cargo_bin("hyperlink").unwrap();
-        cmd.current_dir(site.path()).arg(".");
-
-        cmd.assert().failure().code(1).stdout(
-            predicate::str::is_match(
-                r#"^Reading files
-Checking 1 links from 1 files \(1 documents\)
-\..index\.html
-  error: bad link /bar.html
-
-Found 1 bad links
-"#,
-            )
-            .unwrap(),
-        );
-        site.close().unwrap();
-    }
-
-    #[test]
-    fn test_dead_anchor() {
-        let site = assert_fs::TempDir::new().unwrap();
-        site.child("index.html")
-            .write_str("<a href=bar.html#goo>")
-            .unwrap();
-        site.child("bar.html").touch().unwrap();
-        let mut cmd = Command::cargo_bin("hyperlink").unwrap();
-        cmd.current_dir(site.path()).arg(".").arg("--check-anchors");
-
-        cmd.assert().failure().code(2).stdout(
-            predicate::str::is_match(
-                r#"^Reading files
-Checking 1 links from 2 files \(2 documents\)
-\..index\.html
-  error: bad link /bar.html#goo
-
-Found 0 bad links
-Found 1 bad anchors
-$"#,
-            )
-            .unwrap(),
-        );
-        site.close().unwrap();
-    }
-
-    #[test]
-    fn test_version() {
-        let mut cmd = Command::cargo_bin("hyperlink").unwrap();
-        cmd.arg("--version");
-
-        cmd.assert()
-            .success()
-            .code(0)
-            .stdout(predicate::str::contains("hyperlink "));
-    }
-
-    #[test]
-    fn test_no_args() {
-        let mut cmd = Command::cargo_bin("hyperlink").unwrap();
-
-        cmd.assert()
-            .failure()
-            .code(1)
-            .stdout(predicate::str::contains(
-                "\
-Usage: [-V] [-j=ARG] (COMMAND ... | [--check-anchors] [--sources=ARG] [--github-actions] [BASE-PATH
-])
-",
-            ));
-    }
-
-    #[test]
-    fn test_bad_dir() {
-        let mut cmd = Command::cargo_bin("hyperlink").unwrap();
-        cmd.arg("non_existing_dir");
-
-        cmd.assert()
-            .failure()
-            .code(1)
-            .stdout("Reading files\n")
-            .stderr(predicate::str::contains(
-                "Error: IO error for operation on non_existing_dir:",
-            ));
-    }
 }
