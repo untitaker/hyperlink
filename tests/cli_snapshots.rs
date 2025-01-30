@@ -69,3 +69,28 @@ fn test_dump_paragraphs_help() {
     ----- stderr -----
     "###);
 }
+
+#[test]
+fn test_version() {
+    let mut settings = insta::Settings::clone_current();
+    settings.add_filter(r"hyperlink [.\d]+", "hyperlink [VERSION]");
+    let _guard = settings.bind_to_scope();
+
+    assert_cmd_snapshot!(cli().arg("-V"), @r###"
+    success: true
+    exit_code: 0
+    ----- stdout -----
+    hyperlink [VERSION]
+
+    ----- stderr -----
+    "###);
+
+    assert_cmd_snapshot!(cli().arg("--version"), @r###"
+    success: true
+    exit_code: 0
+    ----- stdout -----
+    hyperlink [VERSION]
+
+    ----- stderr -----
+    "###);
+}

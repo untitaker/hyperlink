@@ -53,17 +53,6 @@ $"#,
 }
 
 #[test]
-fn test_version() {
-    let mut cmd = Command::cargo_bin("hyperlink").unwrap();
-    cmd.arg("--version");
-
-    cmd.assert()
-        .success()
-        .code(0)
-        .stdout(predicate::str::contains("hyperlink "));
-}
-
-#[test]
 fn test_bad_dir() {
     let mut cmd = Command::cargo_bin("hyperlink").unwrap();
     cmd.arg("non_existing_dir");

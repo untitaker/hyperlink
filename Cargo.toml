@@ -31,7 +31,7 @@ bpaf = { version = "0.9.16", features = ["derive"] }
 [dev-dependencies]
 assert_cmd = "2.0.2"
 assert_fs = "1.0.2"
-insta = "1.42.1"
+insta = { version = "1.42.1", features = ["filters"] }
 insta-cmd = "0.6.0"
 predicates = "3.1.2"
 pretty_assertions = "1.0.0"
