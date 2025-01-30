@@ -54,7 +54,7 @@ struct MainCommand {
 struct Cli {
     // TODO: use bpaf-native version option
     /// print version information and exit
-    #[bpaf(long, short('V'))]
+    #[bpaf(long, short('V'), hide_usage)]
     version: bool,
 
     /// how many threads to use, default is to try and saturate CPU

@@ -13,8 +13,7 @@ fn test_no_args() {
     ----- stdout -----
     A command-line tool to find broken links in your static site.
 
-    Usage: [-V] [-j=ARG] (COMMAND ... | [--check-anchors] [--sources=ARG] [--github-actions] [BASE-PATH
-    ])
+    Usage: [-j=ARG] (COMMAND ... | [--check-anchors] [--sources=ARG] [--github-actions] [BASE-PATH])
 
     Available positional items:
         BASE-PATH             the static file path to check
