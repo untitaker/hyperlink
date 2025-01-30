@@ -126,8 +126,8 @@ fn main() -> Result<(), Error> {
     let Cli {
         version,
         threads,
-        command
-    }= cli().run();
+        command,
+    } = cli().run();
 
     if version {
         println!("hyperlink {}", env!("CARGO_PKG_VERSION"));
