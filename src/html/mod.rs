@@ -575,10 +575,7 @@ fn test_document_join_bare_html() {
 fn test_json_script() {
     use crate::paragraph::ParagraphHasher;
 
-    let doc = Document::new(
-        Path::new("/"),
-        Path::new("/html5gum/struct.Tokenizer.html"),
-    );
+    let doc = Document::new(Path::new("/"), Path::new("/html5gum/struct.Tokenizer.html"));
 
     let html = r#"<script type="text/json" id="notable-traits-data">{"InfallibleTokenizer<R, E>":"<h3>Notable traits for <code><a class=\"struct\" href=\"struct.InfallibleTokenizer.html\" title=\"struct html5gum::InfallibleTokenizer\">InfallibleTokenizer</a>&lt;R, E&gt;</code></h3><pre><code><div class=\"where\">impl&lt;R: <a class=\"trait\" href=\"trait.Reader.html\" title=\"trait html5gum::Reader\">Reader</a>&lt;Error = <a class=\"enum\" href=\"https://doc.rust-lang.org/1.82.0/core/convert/enum.Infallible.html\" title=\"enum core::convert::Infallible\">Infallible</a>&gt;, E: <a class=\"trait\" href=\"emitters/trait.Emitter.html\" title=\"trait html5gum::emitters::Emitter\">Emitter</a>&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.82.0/core/iter/traits/iterator/trait.Iterator.html\" title=\"trait core::iter::traits::iterator::Iterator\">Iterator</a> for <a class=\"struct\" href=\"struct.InfallibleTokenizer.html\" title=\"struct html5gum::InfallibleTokenizer\">InfallibleTokenizer</a>&lt;R, E&gt;</div><div class=\"where\">    type <a href=\"https://doc.rust-lang.org/1.82.0/core/iter/traits/iterator/trait.Iterator.html#associatedtype.Item\" class=\"associatedtype\">Item</a> = E::<a class=\"associatedtype\" href=\"emitters/trait.Emitter.html#associatedtype.Token\" title=\"type html5gum::emitters::Emitter::Token\">Token</a>;</div>"}</script>"#;
 
@@ -588,8 +585,5 @@ fn test_json_script() {
         .links_from_read::<_, ParagraphHasher>(&mut doc_buf, html.as_bytes(), false)
         .unwrap();
 
-    assert_eq!(
-        links.collect::<Vec<_>>(),
-        &[]
-    );
+    assert_eq!(links.collect::<Vec<_>>(), &[]);
 }

@@ -25,8 +25,8 @@ html5gum = "0.7.0"
 jwalk = "0.8.1"
 bumpalo = { version = "3.11.1", features = ["collections"] }
 percent-encoding = "2.1.0"
-argh = "0.1.12"
 num_cpus = "1.15.0"
+bpaf = { version = "0.9.16", features = ["derive"] }
 
 [dev-dependencies]
 assert_cmd = "2.0.2"
