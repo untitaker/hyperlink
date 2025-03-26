@@ -119,12 +119,18 @@ links. However, it can do more.
 
 ## External links
 
-Hyperlink does not know how to check external links, but it gives you some tools to extract them.
+Hyperlink does know how to check external links, but it gives you some tools to
+extract them. Output is just the external URLs, separated by newline.
 
 ```
 hyperlink dump-external-links build/
-# http://example.com/myurl
-# ...
+```
+
+Output:
+
+```
+http://example.com/myurl
+...
 ```
 
 This allows you to plug in your own logic that fits the requirements for your
