@@ -186,9 +186,7 @@ and `--github-actions` feature.
 
 ## Redirects
 
-Since 0.1.45 `hyperlink` supports a very small subset of Netlify's `_redirects`
-file. Redirect sources will be considered when validating `href`s, and redirect
-targets will be checked for validity as well.
+Since 0.1.45 `hyperlink` supports reading configured redirects from a file.
 
 At the root of your site, make a file `_redirects`:
 
@@ -203,13 +201,20 @@ At the root of your site, make a file `_redirects`:
 # hyperlink will validate that /new-url.html exists.
 ```
 
+This format is supported by at least Netlify, [Codeberg
+pages](https://codeberg.page) and [Grebedoc](https://grebedoc.dev)
+
+References for this format can be found at
+[Codeberg](https://docs.codeberg.org/codeberg-pages/redirects/) and
+[Netlify](https://docs.netlify.com/manage/routing/redirects/overview/).
+
 The major things missing from the implementation are:
 
 * `hyperlink` completely ignores any status codes or country code conditions.
   The only thing it parses are `from to`, and the rest is ignored.
 
-* "Splat sources" (`/articles/*`) and "splat targets" (`/posts/:splat`) are not
-  supported.
+* "Splat sources" (`/articles/*`) and "splat targets" (`/posts/:splat`) are
+  not supported.
 
 * Generally speaking, `hyperlink` does not support "pretty URLs", i.e. one
   cannot request `/mypage` and expect `mypage.html` to be loaded.
