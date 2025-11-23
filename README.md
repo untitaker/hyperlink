@@ -186,7 +186,7 @@ and `--github-actions` feature.
 
 ## Redirects
 
-Since 0.1.45 `hyperlink` supports reading configured redirects from a file.
+Since 0.2.0 `hyperlink` supports reading configured redirects from a file.
 
 At the root of your site, make a file `_redirects`:
 
