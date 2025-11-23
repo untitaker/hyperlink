@@ -106,3 +106,40 @@ Found 1 bad links
 
     site.close().unwrap();
 }
+
+#[test]
+fn test_redirects_only_at_root() {
+    let site = assert_fs::TempDir::new().unwrap();
+
+    site.child("_redirects")
+        .write_str("/old-page /new-page.html")
+        .unwrap();
+
+    site.child("subdir/_redirects")
+        .write_str("/sub-old /sub-new.html")
+        .unwrap();
+
+    site.child("new-page.html").touch().unwrap();
+
+    site.child("index.html")
+        .write_str("<a href='/old-page'>link to old</a><a href='/sub-old'>link to sub</a>")
+        .unwrap();
+
+    let mut cmd = Command::cargo_bin("hyperlink").unwrap();
+    cmd.current_dir(site.path()).arg(".");
+
+    cmd.assert().failure().code(1).stdout(
+        predicate::str::is_match(
+            r#"^Reading files
+Checking 3 links from 4 files \(3 documents\)
+\./index\.html
+  error: bad link /sub-old
+
+Found 1 bad links
+"#,
+        )
+        .unwrap(),
+    );
+
+    site.close().unwrap();
+}

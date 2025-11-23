@@ -318,7 +318,7 @@ impl Document {
         'b: 'l,
         F: FnMut(Link<'l, P::Paragraph>),
     {
-        if self.path.file_name().and_then(|f| f.to_str()) == Some("_redirects") {
+        if self.href == "_redirects" {
             for link in self.parse_redirects::<P>(doc_buf, check_anchors)? {
                 callback(link);
             }
