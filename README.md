@@ -184,6 +184,36 @@ and `--github-actions` feature.
   fairly feature-rich, but was a non-starter due to performance. This applies
   to other countless link checkers we tried that are not mentioned here.
 
+## Redirects
+
+Since 0.1.45 `hyperlink` supports a very small subset of Netlify's `_redirects`
+file. Redirect sources will be considered when validating `href`s, and redirect
+targets will be checked for validity as well.
+
+At the root of your site, make a file `_redirects`:
+
+```
+# lines starting with # are ignored
+/old-url.html /new-url.html
+
+# on the next line, trailing data like the 301 status code is ignored
+/old-url2.html /new-url2.html  301
+
+# /old-url.html will become a valid link target
+# hyperlink will validate that /new-url.html exists.
+```
+
+The major things missing from the implementation are:
+
+* `hyperlink` completely ignores any status codes or country code conditions.
+  The only thing it parses are `from to`, and the rest is ignored.
+
+* "Splat sources" (`/articles/*`) and "splat targets" (`/posts/:splat`) are not
+  supported.
+
+* Generally speaking, `hyperlink` does not support "pretty URLs", i.e. one
+  cannot request `/mypage` and expect `mypage.html` to be loaded.
+
 ## Testimonials
 
 > We use Hyperlink to check for dead links on

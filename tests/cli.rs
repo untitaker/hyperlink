@@ -65,3 +65,44 @@ fn test_bad_dir() {
             "Error: IO error for operation on non_existing_dir:",
         ));
 }
+
+#[test]
+fn test_redirects() {
+    let site = assert_fs::TempDir::new().unwrap();
+
+    site.child("_redirects")
+        .write_str(
+            "# This is a comment\n\
+             \n\
+             /old-page /new-page.html 301\n\
+             /external https://example.com/page\n\
+             /broken /missing-page.html\n\
+             /another /target.html",
+        )
+        .unwrap();
+
+    site.child("new-page.html").touch().unwrap();
+    site.child("target.html").touch().unwrap();
+
+    site.child("index.html")
+        .write_str("<a href='/old-page'>link</a>")
+        .unwrap();
+
+    let mut cmd = Command::cargo_bin("hyperlink").unwrap();
+    cmd.current_dir(site.path()).arg(".");
+
+    cmd.assert().failure().code(1).stdout(
+        predicate::str::is_match(
+            r#"^Reading files
+Checking 4 links from 4 files \(4 documents\)
+\./.*_redirects
+  error: bad link /missing-page\.html
+
+Found 1 bad links
+"#,
+        )
+        .unwrap(),
+    );
+
+    site.close().unwrap();
+}
