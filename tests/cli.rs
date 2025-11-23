@@ -15,8 +15,8 @@ fn test_dead_link() {
         predicate::str::is_match(
             r#"^Reading files
 Checking 1 links from 1 files \(1 documents\)
-\..index\.html
-  error: bad link /bar.html
+\...index\.html
+  error: bad link .bar.html
 
 Found 1 bad links
 "#,
@@ -40,8 +40,8 @@ fn test_dead_anchor() {
         predicate::str::is_match(
             r#"^Reading files
 Checking 1 links from 2 files \(2 documents\)
-\..index\.html
-  error: bad link /bar.html#goo
+\...index\.html
+  error: bad link .bar.html#goo
 
 Found 0 bad links
 Found 1 bad anchors
@@ -95,8 +95,8 @@ fn test_redirects() {
         predicate::str::is_match(
             r#"^Reading files
 Checking 4 links from 4 files \(4 documents\)
-\./.*_redirects
-  error: bad link /missing-page\.html
+\....._redirects
+  error: bad link .missing-page\.html
 
 Found 1 bad links
 "#,
