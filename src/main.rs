@@ -468,25 +468,16 @@ fn extract_html_links<C: LinkCollector<P::Paragraph>, P: ParagraphWalker>(
                 }));
                 file_count += 1;
 
-                if !document
-                    .path
-                    .extension()
-                    .and_then(|extension| Some(HTML_FILES.contains(&extension.to_str()?)))
-                    .unwrap_or(false)
-                {
-                    return Ok((doc_buf, collector, documents_count, file_count));
+                let was_parsed = document
+                    .extract_links::<P, _>(&mut doc_buf, check_anchors, |link| {
+                        collector.ingest(link);
+                    })
+                    .with_context(|| format!("Failed to read file {}", document.path.display()))?;
+
+                if was_parsed {
+                    doc_buf.reset();
+                    documents_count += 1;
                 }
-
-                for link in document
-                    .links::<P>(&mut doc_buf, check_anchors)
-                    .with_context(|| format!("Failed to read file {}", document.path.display()))?
-                {
-                    collector.ingest(link);
-                }
-
-                doc_buf.reset();
-
-                documents_count += 1;
 
                 Ok((doc_buf, collector, documents_count, file_count))
             },

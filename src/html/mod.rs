@@ -3,7 +3,7 @@ mod parser;
 use std::borrow::Cow;
 use std::fmt;
 use std::fs;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::Arc;
@@ -308,6 +308,41 @@ impl Document {
         Href(href.into_bump_str())
     }
 
+    pub fn extract_links<'b, 'l, P: ParagraphWalker, F>(
+        &self,
+        doc_buf: &'b mut DocumentBuffers,
+        check_anchors: bool,
+        mut callback: F,
+    ) -> Result<bool, Error>
+    where
+        'b: 'l,
+        F: FnMut(Link<'l, P::Paragraph>),
+    {
+        if self.href == "_redirects" {
+            for link in self.parse_redirects::<P>(doc_buf, check_anchors)? {
+                callback(link);
+            }
+            return Ok(true);
+        }
+
+        if self
+            .path
+            .extension()
+            .and_then(|extension| {
+                let ext = extension.to_str()?;
+                Some(ext == "html" || ext == "htm")
+            })
+            .unwrap_or(false)
+        {
+            for link in self.links_from_html::<P>(doc_buf, check_anchors)? {
+                callback(link);
+            }
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
     pub fn links<'b, 'l, P: ParagraphWalker>(
         &self,
         doc_buf: &'b mut DocumentBuffers,
@@ -317,6 +352,62 @@ impl Document {
         'b: 'l,
     {
         self.links_from_read::<_, P>(doc_buf, fs::File::open(&*self.path)?, check_anchors)
+    }
+
+    fn links_from_html<'b, 'l, P: ParagraphWalker>(
+        &self,
+        doc_buf: &'b mut DocumentBuffers,
+        check_anchors: bool,
+    ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
+    where
+        'b: 'l,
+    {
+        self.links_from_read::<_, P>(doc_buf, fs::File::open(&*self.path)?, check_anchors)
+    }
+
+    fn parse_redirects<'b, 'l, P: ParagraphWalker>(
+        &self,
+        doc_buf: &'b mut DocumentBuffers,
+        check_anchors: bool,
+    ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
+    where
+        'b: 'l,
+    {
+        let mut link_buf = BumpVec::new_in(&doc_buf.arena);
+        let file = fs::File::open(&*self.path)?;
+        let reader = BufReader::new(file);
+
+        for line in reader.lines() {
+            let line = line?;
+
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+
+            let parts: Vec<&str> = trimmed.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let source = parts[0];
+                let target = parts[1];
+
+                let source_str = doc_buf.arena.alloc_str(source);
+                let target_str = doc_buf.arena.alloc_str(target);
+
+                link_buf.push(Link::Defines(DefinedLink {
+                    href: self.join(&doc_buf.arena, check_anchors, source_str),
+                }));
+
+                if !is_external_link(target.as_bytes()) {
+                    link_buf.push(Link::Uses(UsedLink {
+                        href: self.join(&doc_buf.arena, check_anchors, target_str),
+                        path: self.path.clone(),
+                        paragraph: None,
+                    }));
+                }
+            }
+        }
+
+        Ok(link_buf.into_iter())
     }
 
     fn links_from_read<'b, 'l, R: Read, P: ParagraphWalker>(
