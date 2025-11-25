@@ -119,7 +119,7 @@ links. However, it can do more.
 
 ## External links
 
-Hyperlink does know how to check external links, but it gives you some tools to
+Hyperlink does not know how to check external links, but it gives you some tools to
 extract them. Output is just the external URLs, separated by newline.
 
 ```
