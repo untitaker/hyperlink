@@ -117,6 +117,41 @@ links. However, it can do more.
 * `exit 1`: There have been errors (hard 404s)
 * `exit 2`: There have been only warnings (broken anchors)
 
+## Redirects
+
+Since 0.2.0 `hyperlink` supports reading configured redirects from a file.
+
+At the root of your site, make a file `_redirects`:
+
+```
+# lines starting with # are ignored
+/old-url.html /new-url.html
+
+# on the next line, trailing data like the 301 status code is ignored
+/old-url2.html /new-url2.html  301
+
+# /old-url.html will become a valid link target
+# hyperlink will validate that /new-url.html exists.
+```
+
+This format is supported by at least Netlify, [Codeberg
+pages](https://codeberg.page) and [Grebedoc](https://grebedoc.dev)
+
+References for this format can be found at
+[Codeberg](https://docs.codeberg.org/codeberg-pages/redirects/) and
+[Netlify](https://docs.netlify.com/manage/routing/redirects/overview/).
+
+The major things missing from the implementation are:
+
+* `hyperlink` completely ignores any status codes or country code conditions.
+  The only thing it parses are `from to`, and the rest is ignored.
+
+* "Splat sources" (`/articles/*`) and "splat targets" (`/posts/:splat`) are
+  not supported.
+
+* Generally speaking, `hyperlink` does not support "pretty URLs", i.e. one
+  cannot request `/mypage` and expect `mypage.html` to be loaded.
+
 ## External links
 
 Hyperlink does not know how to check external links, but it gives you some tools to
@@ -183,41 +218,6 @@ and `--github-actions` feature.
 * [wummel/linkchecker](https://wummel.github.io/linkchecker/) seems to be the
   fairly feature-rich, but was a non-starter due to performance. This applies
   to other countless link checkers we tried that are not mentioned here.
-
-## Redirects
-
-Since 0.2.0 `hyperlink` supports reading configured redirects from a file.
-
-At the root of your site, make a file `_redirects`:
-
-```
-# lines starting with # are ignored
-/old-url.html /new-url.html
-
-# on the next line, trailing data like the 301 status code is ignored
-/old-url2.html /new-url2.html  301
-
-# /old-url.html will become a valid link target
-# hyperlink will validate that /new-url.html exists.
-```
-
-This format is supported by at least Netlify, [Codeberg
-pages](https://codeberg.page) and [Grebedoc](https://grebedoc.dev)
-
-References for this format can be found at
-[Codeberg](https://docs.codeberg.org/codeberg-pages/redirects/) and
-[Netlify](https://docs.netlify.com/manage/routing/redirects/overview/).
-
-The major things missing from the implementation are:
-
-* `hyperlink` completely ignores any status codes or country code conditions.
-  The only thing it parses are `from to`, and the rest is ignored.
-
-* "Splat sources" (`/articles/*`) and "splat targets" (`/posts/:splat`) are
-  not supported.
-
-* Generally speaking, `hyperlink` does not support "pretty URLs", i.e. one
-  cannot request `/mypage` and expect `mypage.html` to be loaded.
 
 ## Testimonials
 
