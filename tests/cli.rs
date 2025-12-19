@@ -1,6 +1,7 @@
-use assert_cmd::Command;
+use assert_cmd::{cargo, prelude::*};
 use assert_fs::prelude::*;
 use predicates::prelude::*;
+use std::process::Command;
 
 #[test]
 fn test_dead_link() {
@@ -8,7 +9,7 @@ fn test_dead_link() {
     site.child("index.html")
         .write_str("<a href=bar.html>")
         .unwrap();
-    let mut cmd = Command::cargo_bin("hyperlink").unwrap();
+    let mut cmd = Command::new(cargo::cargo_bin!("hyperlink"));
     cmd.current_dir(site.path()).arg(".");
 
     cmd.assert().failure().code(1).stdout(
@@ -33,7 +34,7 @@ fn test_dead_anchor() {
         .write_str("<a href=bar.html#goo>")
         .unwrap();
     site.child("bar.html").touch().unwrap();
-    let mut cmd = Command::cargo_bin("hyperlink").unwrap();
+    let mut cmd = Command::new(cargo::cargo_bin!("hyperlink"));
     cmd.current_dir(site.path()).arg(".").arg("--check-anchors");
 
     cmd.assert().failure().code(2).stdout(
@@ -54,7 +55,7 @@ $"#,
 
 #[test]
 fn test_bad_dir() {
-    let mut cmd = Command::cargo_bin("hyperlink").unwrap();
+    let mut cmd = Command::new(cargo::cargo_bin!("hyperlink"));
     cmd.arg("non_existing_dir");
 
     cmd.assert()
