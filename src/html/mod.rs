@@ -36,11 +36,12 @@ pub fn push_and_canonicalize(base: &mut BumpString, path: &str) {
         base.truncate(base.rfind('/').unwrap_or(0));
     }
 
-    let num_slashes = path.matches('/').count();
+    let mut components = path.split('/').peekable();
 
-    for (i, component) in path.split('/').enumerate() {
+    while let Some(component) = components.next() {
+        let is_last = components.peek().is_none();
         match component {
-            "index.html" | "index.htm" if i == num_slashes => {}
+            "index.html" | "index.htm" if is_last => {}
             "" | "." => {}
             ".." => {
                 base.truncate(base.rfind('/').unwrap_or(0));

@@ -25,10 +25,17 @@ pub trait ParagraphWalker: Send {
     fn finish_paragraph(&mut self) -> Option<Self::Paragraph>;
 
     fn update(&mut self, text: &[u8]) {
-        for c in text {
-            if !c.is_ascii_whitespace() {
-                self.update_raw(&[*c]);
+        let mut start = 0;
+        for (i, &c) in text.iter().enumerate() {
+            if c.is_ascii_whitespace() {
+                if start < i {
+                    self.update_raw(&text[start..i]);
+                }
+                start = i + 1;
             }
+        }
+        if start < text.len() {
+            self.update_raw(&text[start..]);
         }
     }
 }

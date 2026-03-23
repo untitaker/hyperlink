@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -125,14 +125,18 @@ impl<P, C: LinkCollector<P>> LinkCollector<P> for LocalLinksOnly<C> {
 
 /// Link collector used for actual link checking. Keeps track of broken links only.
 pub struct BrokenLinkCollector<P> {
-    links: BTreeMap<String, LinkState<P>>,
+    // HashMap provides ~13% speedup over BTreeMap for link collection.
+    // Benchmarked with 50k files / 2.5M links: BTreeMap 1.73s -> HashMap 1.50s.
+    // Adding reserve() in merge() gives another ~7% (1.50s -> 1.39s).
+    // Test data: html-bench --file-count 50000 --max-folder-size 100 --link-density 50 --seed 42
+    links: HashMap<String, LinkState<P>>,
     used_link_count: usize,
 }
 
 impl<P: Send + Copy> LinkCollector<P> for BrokenLinkCollector<P> {
     fn new() -> Self {
         BrokenLinkCollector {
-            links: BTreeMap::new(),
+            links: HashMap::new(),
             used_link_count: 0,
         }
     }
@@ -160,6 +164,7 @@ impl<P: Send + Copy> LinkCollector<P> for BrokenLinkCollector<P> {
 
     fn merge(&mut self, other: Self) {
         self.used_link_count += other.used_link_count;
+        self.links.reserve(other.links.len());
 
         for (href, other_state) in other.links {
             if let Some(state) = self.links.get_mut(&href) {
@@ -177,7 +182,7 @@ pub struct BrokenLink<P> {
     pub link: OwnedUsedLink<P>,
 }
 
-impl<P: Copy + PartialEq> BrokenLinkCollector<P> {
+impl<P: Copy + PartialEq + Ord> BrokenLinkCollector<P> {
     pub fn get_broken_links(&self, check_anchors: bool) -> impl Iterator<Item = BrokenLink<P>> {
         let mut broken_links = Vec::new();
 
@@ -205,6 +210,8 @@ impl<P: Copy + PartialEq> BrokenLinkCollector<P> {
             }
         }
 
+        // Sort for deterministic output (HashMap iteration order is arbitrary)
+        broken_links.sort();
         broken_links.into_iter()
     }
 
