@@ -8,5 +8,5 @@ edition = "2018"
 
 [dependencies]
 structopt = "0.3.20"
-rand = { version = "0.7.3", features = ["small_rng"] }
+rand = { version = "0.9.3", features = ["small_rng"] }
 anyhow = "1.0.33"
