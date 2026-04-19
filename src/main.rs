@@ -1,4 +1,5 @@
 #![allow(clippy::manual_flatten)]
+#![allow(clippy::collapsible_match)]
 mod collector;
 mod html;
 mod markdown;

@@ -34,12 +34,9 @@ jobs:
             ~/.cargo
             ./target/
           key: ${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: clippy
       - run: cargo build
       - run: cargo test
-      - uses: clechasseur/rs-clippy-check@v3
-        with:
-          args: --all-features
+      - run: cargo clippy --all-features -- -D warnings
