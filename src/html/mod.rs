@@ -19,6 +19,10 @@ use crate::urls::is_external_link;
 #[cfg(test)]
 use pretty_assertions::assert_eq;
 
+fn is_dynamic_redirect(path: &str) -> bool {
+    path.contains("/:") || path.contains("/@") || path.contains('*')
+}
+
 #[inline]
 pub fn push_and_canonicalize(base: &mut BumpString, path: &str) {
     if is_external_link(path.as_bytes()) {
@@ -374,9 +378,23 @@ impl Document {
     where
         'b: 'l,
     {
+        self.redirects_from_read::<_, P>(
+            doc_buf,
+            BufReader::new(fs::File::open(&*self.path)?),
+            check_anchors,
+        )
+    }
+
+    fn redirects_from_read<'b, 'l, R: BufRead, P: ParagraphWalker>(
+        &self,
+        doc_buf: &'b mut DocumentBuffers,
+        reader: R,
+        check_anchors: bool,
+    ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
+    where
+        'b: 'l,
+    {
         let mut link_buf = BumpVec::new_in(&doc_buf.arena);
-        let file = fs::File::open(&*self.path)?;
-        let reader = BufReader::new(file);
 
         for line in reader.lines() {
             let line = line?;
@@ -390,6 +408,11 @@ impl Document {
             if parts.len() >= 2 {
                 let source = parts[0];
                 let target = parts[1];
+
+                // Skip dynamic redirects with placeholders (:param, @param, or * splat)
+                if is_dynamic_redirect(source) || is_dynamic_redirect(target) {
+                    continue;
+                }
 
                 let source_str = doc_buf.arena.alloc_str(source);
                 let target_str = doc_buf.arena.alloc_str(target);
@@ -678,4 +701,28 @@ fn test_json_script() {
         .unwrap();
 
     assert_eq!(links.collect::<Vec<_>>(), &[]);
+}
+
+#[test]
+fn test_redirects_dynamic_placeholders() {
+    use crate::paragraph::NoopParagraphWalker;
+
+    let doc = Document::new(Path::new("public/"), Path::new("public/_redirects"));
+
+    let redirects = "\
+        # Dynamic redirects should be skipped\n\
+        /roster/:slug/matches /roster/:slug/matches/1\n\
+        /roster/@slug/matches /roster/@slug/matches/1\n\
+        /docs/* /new-docs/:splat\n\
+        /static /target.html\n";
+
+    let mut doc_buf = DocumentBuffers::default();
+    let links: Vec<_> = doc
+        .redirects_from_read::<_, NoopParagraphWalker>(&mut doc_buf, redirects.as_bytes(), false)
+        .unwrap()
+        .collect();
+
+    assert_eq!(links.len(), 2);
+    assert!(matches!(&links[0], Link::Defines(DefinedLink { href }) if href.0 == "static"));
+    assert!(matches!(&links[1], Link::Uses(UsedLink { href, .. }) if href.0 == "target.html"));
 }
