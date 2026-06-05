@@ -33,39 +33,84 @@ impl ParserBuffers {
     }
 }
 
-pub struct HyperlinkEmitter<'a, 'l, 'd, P: ParagraphWalker> {
-    pub paragraph_walker: P,
-    pub arena: &'a Bump,
-    pub document: &'d Document,
-    pub link_buf: &'d mut BumpVec<'a, Link<'l, P::Paragraph>>,
-    pub in_paragraph: bool,
-    pub last_paragraph_i: usize,
-    pub buffers: &'d mut ParserBuffers,
-    pub current_tag_is_closing: bool,
-    pub check_anchors: bool,
+/// Turns attribute values into links and emits them through the callback, keeping track of which
+/// paragraph they belong to.
+///
+/// This lives in its own struct (disjoint from the tag/attribute buffers in HyperlinkEmitter) so
+/// that links can be pushed while attribute values are still borrowed.
+struct LinkExtractor<'a, 'd, P: ParagraphWalker, F> {
+    paragraph_walker: P,
+    arena: &'a Bump,
+    document: &'d Document,
+    link_buf: BumpVec<'a, Link<'a, P::Paragraph>>,
+    in_paragraph: bool,
+    check_anchors: bool,
+    callback: F,
 }
 
-impl<'a, 'l, P> HyperlinkEmitter<'a, 'l, '_, P>
+impl<'a, P, F> LinkExtractor<'a, '_, P, F>
 where
-    'a: 'l,
     P: ParagraphWalker,
+    F: FnMut(Link<'a, P::Paragraph>),
 {
-    fn extract_used_link(&mut self) {
-        let value = try_normalize_href_value(
-            std::str::from_utf8(&self.buffers.current_attribute_value).unwrap(),
-        );
+    /// Links inside a paragraph are buffered until the paragraph is closed (their paragraph hash
+    /// is assigned retroactively), all other links go straight to the callback.
+    ///
+    /// If P is a noop walker, no paragraphs are tracked and link_buf is never used.
+    fn push_link(&mut self, link: Link<'a, P::Paragraph>) {
+        if !P::is_noop() && self.in_paragraph {
+            self.link_buf.push(link);
+        } else {
+            (self.callback)(link);
+        }
+    }
 
-        self.link_buf.push(Link::Uses(UsedLink {
+    fn flush_links(&mut self) {
+        if P::is_noop() {
+            return;
+        }
+
+        for link in self.link_buf.drain(..) {
+            (self.callback)(link);
+        }
+    }
+
+    fn begin_paragraph(&mut self) {
+        // links buffered under a paragraph that never got closed never get a paragraph
+        // assigned
+        self.flush_links();
+        self.in_paragraph = true;
+        self.paragraph_walker.finish_paragraph();
+    }
+
+    fn end_paragraph(&mut self) {
+        let paragraph = self.paragraph_walker.finish_paragraph();
+        if self.in_paragraph {
+            for link in &mut self.link_buf {
+                match link {
+                    Link::Uses(ref mut x) => {
+                        x.paragraph = paragraph.clone();
+                    }
+                    Link::Defines(_) => (),
+                }
+            }
+            self.in_paragraph = false;
+        }
+        self.flush_links();
+    }
+
+    fn extract_used_link(&mut self, value: &[u8]) {
+        let value = try_normalize_href_value(std::str::from_utf8(value).unwrap());
+
+        self.push_link(Link::Uses(UsedLink {
             href: self.document.join(self.arena, self.check_anchors, value),
             path: self.document.path.clone(),
             paragraph: None,
         }));
     }
 
-    fn extract_used_link_srcset(&mut self) {
-        let value = try_normalize_href_value(
-            std::str::from_utf8(&self.buffers.current_attribute_value).unwrap(),
-        );
+    fn extract_used_link_srcset(&mut self, value: &[u8]) {
+        let value = try_normalize_href_value(std::str::from_utf8(value).unwrap());
 
         // https://html.spec.whatwg.org/multipage/images.html#srcset-attribute
         for value in value
@@ -73,7 +118,7 @@ where
             .filter_map(|candidate: &str| candidate.split_whitespace().next())
             .filter(|value| !value.is_empty())
         {
-            self.link_buf.push(Link::Uses(UsedLink {
+            self.push_link(Link::Uses(UsedLink {
                 href: self.document.join(self.arena, self.check_anchors, value),
                 path: self.document.path.clone(),
                 paragraph: None,
@@ -81,32 +126,66 @@ where
         }
     }
 
-    fn extract_anchor_def(&mut self) {
+    fn extract_anchor_def(&mut self, value: &[u8]) {
         if self.check_anchors {
+            let value = try_normalize_href_value(std::str::from_utf8(value).unwrap());
             let mut href = BumpString::new_in(self.arena);
-            let value = try_normalize_href_value(
-                std::str::from_utf8(&self.buffers.current_attribute_value).unwrap(),
-            );
             href.push('#');
             href.push_str(value);
 
-            self.link_buf.push(Link::Defines(DefinedLink {
+            self.push_link(Link::Defines(DefinedLink {
                 href: self.document.join(self.arena, self.check_anchors, &href),
             }));
         }
     }
+}
+
+pub struct HyperlinkEmitter<'a, 'd, P: ParagraphWalker, F> {
+    extractor: LinkExtractor<'a, 'd, P, F>,
+    buffers: &'d mut ParserBuffers,
+    current_tag_is_closing: bool,
+}
+
+impl<'a, 'd, P, F> HyperlinkEmitter<'a, 'd, P, F>
+where
+    P: ParagraphWalker,
+    F: FnMut(Link<'a, P::Paragraph>),
+{
+    pub fn new(
+        arena: &'a Bump,
+        document: &'d Document,
+        buffers: &'d mut ParserBuffers,
+        check_anchors: bool,
+        callback: F,
+    ) -> Self {
+        HyperlinkEmitter {
+            extractor: LinkExtractor {
+                paragraph_walker: P::new(),
+                arena,
+                document,
+                link_buf: BumpVec::new_in(arena),
+                in_paragraph: false,
+                check_anchors,
+                callback,
+            },
+            buffers,
+            current_tag_is_closing: false,
+        }
+    }
 
     fn flush_old_attribute(&mut self) {
+        let value = self.buffers.current_attribute_value.as_slice();
+
         match (
             self.buffers.current_tag_name.as_slice(),
             self.buffers.current_attribute_name.as_slice(),
         ) {
-            (b"link" | b"area" | b"a", b"href") => self.extract_used_link(),
-            (b"a", b"name") => self.extract_anchor_def(),
-            (b"img" | b"script" | b"iframe", b"src") => self.extract_used_link(),
-            (b"img", b"srcset") => self.extract_used_link_srcset(),
-            (b"object", b"data") => self.extract_used_link(),
-            (_, b"id") => self.extract_anchor_def(),
+            (b"link" | b"area" | b"a", b"href") => self.extractor.extract_used_link(value),
+            (b"a", b"name") => self.extractor.extract_anchor_def(value),
+            (b"img" | b"script" | b"iframe", b"src") => self.extractor.extract_used_link(value),
+            (b"img", b"srcset") => self.extractor.extract_used_link_srcset(value),
+            (b"object", b"data") => self.extractor.extract_used_link(value),
+            (_, b"id") => self.extractor.extract_anchor_def(value),
             _ => (),
         }
 
@@ -115,10 +194,10 @@ where
     }
 }
 
-impl<'a, 'l, P> Emitter for HyperlinkEmitter<'a, 'l, '_, P>
+impl<'a, P, F> Emitter for HyperlinkEmitter<'a, '_, P, F>
 where
-    'a: 'l,
     P: ParagraphWalker,
+    F: FnMut(Link<'a, P::Paragraph>),
 {
     type Token = ();
 
@@ -134,8 +213,8 @@ where
     }
 
     fn emit_string(&mut self, c: &[u8]) {
-        if !P::is_noop() && self.in_paragraph {
-            self.paragraph_walker.update(c);
+        if !P::is_noop() && self.extractor.in_paragraph {
+            self.extractor.paragraph_walker.update(c);
         }
     }
 
@@ -162,24 +241,10 @@ where
                 .extend(&self.buffers.current_tag_name);
 
             if is_paragraph_tag {
-                self.in_paragraph = true;
-                self.last_paragraph_i = self.link_buf.len();
-                self.paragraph_walker.finish_paragraph();
+                self.extractor.begin_paragraph();
             }
         } else if is_paragraph_tag {
-            let paragraph = self.paragraph_walker.finish_paragraph();
-            if self.in_paragraph {
-                for link in &mut self.link_buf[self.last_paragraph_i..] {
-                    match link {
-                        Link::Uses(ref mut x) => {
-                            x.paragraph = paragraph.clone();
-                        }
-                        Link::Defines(_) => (),
-                    }
-                }
-                self.in_paragraph = false;
-            }
-            self.last_paragraph_i = self.link_buf.len();
+            self.extractor.end_paragraph();
         }
 
         self.buffers.current_tag_name.clear();
@@ -188,7 +253,7 @@ where
 
     fn set_self_closing(&mut self) {
         if !P::is_noop() && is_paragraph_tag(&self.buffers.current_tag_name) {
-            self.in_paragraph = false;
+            self.extractor.in_paragraph = false;
         }
     }
 
@@ -214,9 +279,13 @@ where
             && self.buffers.current_tag_name == self.buffers.last_start_tag
     }
 
+    fn emit_eof(&mut self) {
+        // links buffered under a paragraph that never got closed never get a paragraph assigned
+        self.extractor.flush_links();
+    }
+
     fn emit_current_comment(&mut self) {}
     fn emit_current_doctype(&mut self) {}
-    fn emit_eof(&mut self) {}
     fn emit_error(&mut self, _: Error) {}
     #[inline]
     fn should_emit_errors(&mut self) -> bool {

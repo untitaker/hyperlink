@@ -10,7 +10,6 @@ use std::sync::Arc;
 
 use anyhow::Error;
 use bumpalo::collections::String as BumpString;
-use bumpalo::collections::Vec as BumpVec;
 use html5gum::{IoReader, Tokenizer};
 
 use crate::paragraph::ParagraphWalker;
@@ -317,16 +316,14 @@ impl Document {
         &self,
         doc_buf: &'b mut DocumentBuffers,
         check_anchors: bool,
-        mut callback: F,
+        callback: F,
     ) -> Result<bool, Error>
     where
         'b: 'l,
         F: FnMut(Link<'l, P::Paragraph>),
     {
         if self.href == "_redirects" {
-            for link in self.parse_redirects::<P>(doc_buf, check_anchors)? {
-                callback(link);
-            }
+            self.parse_redirects::<P, F>(doc_buf, check_anchors, callback)?;
             return Ok(true);
         }
 
@@ -339,52 +336,60 @@ impl Document {
             })
             .unwrap_or(false)
         {
-            for link in self.links::<P>(doc_buf, check_anchors)? {
-                callback(link);
-            }
+            self.links::<P, F>(doc_buf, check_anchors, callback)?;
             return Ok(true);
         }
 
         Ok(false)
     }
 
-    pub fn links<'b, 'l, P: ParagraphWalker>(
+    pub fn links<'b, 'l, P: ParagraphWalker, F>(
         &self,
         doc_buf: &'b mut DocumentBuffers,
         check_anchors: bool,
-    ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
+        callback: F,
+    ) -> Result<(), Error>
     where
         'b: 'l,
+        F: FnMut(Link<'l, P::Paragraph>),
     {
-        self.links_from_read::<_, P>(doc_buf, fs::File::open(&*self.path)?, check_anchors)
-    }
-
-    fn parse_redirects<'b, 'l, P: ParagraphWalker>(
-        &self,
-        doc_buf: &'b mut DocumentBuffers,
-        check_anchors: bool,
-    ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
-    where
-        'b: 'l,
-    {
-        self.redirects_from_read::<_, P>(
+        self.links_from_read::<_, P, F>(
             doc_buf,
-            BufReader::new(fs::File::open(&*self.path)?),
+            fs::File::open(&*self.path)?,
             check_anchors,
+            callback,
         )
     }
 
-    fn redirects_from_read<'b, 'l, R: BufRead, P: ParagraphWalker>(
+    fn parse_redirects<'b, 'l, P: ParagraphWalker, F>(
+        &self,
+        doc_buf: &'b mut DocumentBuffers,
+        check_anchors: bool,
+        callback: F,
+    ) -> Result<(), Error>
+    where
+        'b: 'l,
+        F: FnMut(Link<'l, P::Paragraph>),
+    {
+        self.redirects_from_read::<_, P, F>(
+            doc_buf,
+            BufReader::new(fs::File::open(&*self.path)?),
+            check_anchors,
+            callback,
+        )
+    }
+
+    fn redirects_from_read<'b, 'l, R: BufRead, P: ParagraphWalker, F>(
         &self,
         doc_buf: &'b mut DocumentBuffers,
         reader: R,
         check_anchors: bool,
-    ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
+        mut callback: F,
+    ) -> Result<(), Error>
     where
         'b: 'l,
+        F: FnMut(Link<'l, P::Paragraph>),
     {
-        let mut link_buf = BumpVec::new_in(&doc_buf.arena);
-
         for line in reader.lines() {
             let line = line?;
 
@@ -403,16 +408,13 @@ impl Document {
                     continue;
                 }
 
-                let source_str = doc_buf.arena.alloc_str(source);
-                let target_str = doc_buf.arena.alloc_str(target);
-
-                link_buf.push(Link::Defines(DefinedLink {
-                    href: self.join(&doc_buf.arena, check_anchors, source_str),
+                callback(Link::Defines(DefinedLink {
+                    href: self.join(&doc_buf.arena, check_anchors, source),
                 }));
 
                 if !is_external_link(target.as_bytes()) {
-                    link_buf.push(Link::Uses(UsedLink {
-                        href: self.join(&doc_buf.arena, check_anchors, target_str),
+                    callback(Link::Uses(UsedLink {
+                        href: self.join(&doc_buf.arena, check_anchors, target),
                         path: self.path.clone(),
                         paragraph: None,
                     }));
@@ -420,41 +422,35 @@ impl Document {
             }
         }
 
-        Ok(link_buf.into_iter())
+        Ok(())
     }
 
-    fn links_from_read<'b, 'l, R: Read, P: ParagraphWalker>(
+    fn links_from_read<'b, 'l, R: Read, P: ParagraphWalker, F>(
         &self,
         doc_buf: &'b mut DocumentBuffers,
         read: R,
         check_anchors: bool,
-    ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
+        callback: F,
+    ) -> Result<(), Error>
     where
         'b: 'l,
+        F: FnMut(Link<'l, P::Paragraph>),
     {
-        let mut link_buf = BumpVec::new_in(&doc_buf.arena);
+        let emitter = parser::HyperlinkEmitter::<P, _>::new(
+            &doc_buf.arena,
+            self,
+            &mut doc_buf.parser_buffers,
+            check_anchors,
+            callback,
+        );
+        let ioreader = IoReader::new_with_buffer(read, doc_buf.html_read_buffer.as_mut());
+        let reader = Tokenizer::new_with_emitter(ioreader, emitter);
 
-        {
-            let emitter = parser::HyperlinkEmitter {
-                paragraph_walker: P::new(),
-                arena: &doc_buf.arena,
-                document: self,
-                link_buf: &mut link_buf,
-                in_paragraph: false,
-                last_paragraph_i: 0,
-                buffers: &mut doc_buf.parser_buffers,
-                current_tag_is_closing: false,
-                check_anchors,
-            };
-            let ioreader = IoReader::new_with_buffer(read, doc_buf.html_read_buffer.as_mut());
-            let reader = Tokenizer::new_with_emitter(ioreader, emitter);
-
-            for error in reader {
-                error?;
-            }
+        for error in reader {
+            error?;
         }
 
-        Ok(link_buf.into_iter())
+        Ok(())
     }
 }
 
@@ -500,9 +496,11 @@ fn test_html_parsing_malformed_script() {
 
     let mut doc_buf = DocumentBuffers::default();
 
-    let links = doc
-        .links_from_read::<_, ParagraphHasher>(&mut doc_buf, html.as_bytes(), false)
-        .unwrap();
+    let mut links = Vec::new();
+    doc.links_from_read::<_, ParagraphHasher, _>(&mut doc_buf, html.as_bytes(), false, |link| {
+        links.push(link)
+    })
+    .unwrap();
 
     let used_link = |x: &'static str| {
         Link::Uses(UsedLink {
@@ -512,10 +510,7 @@ fn test_html_parsing_malformed_script() {
         })
     };
 
-    assert_eq!(
-        links.collect::<Vec<_>>(),
-        &[used_link("foo"), used_link("bar")]
-    );
+    assert_eq!(links, &[used_link("foo"), used_link("bar")]);
 }
 
 #[test]
@@ -532,7 +527,10 @@ fn test_document_links() {
 
     let mut doc_buf = DocumentBuffers::default();
 
-    let links = doc.links_from_read::<_, ParagraphHasher>(
+    let arena = Bump::new();
+    let mut links = Vec::new();
+
+    doc.links_from_read::<_, ParagraphHasher, _>(
         &mut doc_buf,
         r#"""
         <!doctype html>
@@ -568,6 +566,7 @@ fn test_document_links() {
     """#
         .as_bytes(),
         false,
+        |link| links.extend(canonicalize_local_link(&arena, link)),
     )
     .unwrap();
 
@@ -579,12 +578,8 @@ fn test_document_links() {
         })
     };
 
-    let arena = Bump::new();
-
     assert_eq!(
-        &links
-            .filter_map(|x| canonicalize_local_link(&arena, x))
-            .collect::<Vec<_>>(),
+        &links,
         &[
             used_link("platforms/ruby"),
             used_link("platforms/perl"),
@@ -685,11 +680,13 @@ fn test_json_script() {
 
     let mut doc_buf = DocumentBuffers::default();
 
-    let links = doc
-        .links_from_read::<_, ParagraphHasher>(&mut doc_buf, html.as_bytes(), false)
-        .unwrap();
+    let mut links = Vec::new();
+    doc.links_from_read::<_, ParagraphHasher, _>(&mut doc_buf, html.as_bytes(), false, |link| {
+        links.push(link)
+    })
+    .unwrap();
 
-    assert_eq!(links.collect::<Vec<_>>(), &[]);
+    assert_eq!(links, &[]);
 }
 
 #[test]
@@ -706,10 +703,14 @@ fn test_redirects_dynamic_placeholders() {
         /static /target.html\n";
 
     let mut doc_buf = DocumentBuffers::default();
-    let links: Vec<_> = doc
-        .redirects_from_read::<_, NoopParagraphWalker>(&mut doc_buf, redirects.as_bytes(), false)
-        .unwrap()
-        .collect();
+    let mut links = Vec::new();
+    doc.redirects_from_read::<_, NoopParagraphWalker, _>(
+        &mut doc_buf,
+        redirects.as_bytes(),
+        false,
+        |link| links.push(link),
+    )
+    .unwrap();
 
     assert_eq!(links.len(), 2);
     assert!(matches!(&links[0], Link::Defines(DefinedLink { href }) if href.0 == "static"));

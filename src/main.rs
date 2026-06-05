@@ -370,10 +370,15 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
         }
         Some(x) if HTML_FILES.contains(&x) => {
             let document = Document::new(Path::new(""), &path);
-            document
-                .links::<DebugParagraphWalker<ParagraphHasher>>(&mut doc_buf, false)?
-                .filter_map(|link| Some((link.into_paragraph()?, None)))
-                .collect()
+            let mut paragraphs = BTreeSet::new();
+            document.links::<DebugParagraphWalker<ParagraphHasher>, _>(
+                &mut doc_buf,
+                false,
+                |link| {
+                    paragraphs.extend(link.into_paragraph().map(|paragraph| (paragraph, None)));
+                },
+            )?;
+            paragraphs
         }
         _ => return Err(anyhow!("Unknown file extension")),
     };
