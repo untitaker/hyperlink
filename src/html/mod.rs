@@ -339,7 +339,7 @@ impl Document {
             })
             .unwrap_or(false)
         {
-            for link in self.links_from_html::<P>(doc_buf, check_anchors)? {
+            for link in self.links::<P>(doc_buf, check_anchors)? {
                 callback(link);
             }
             return Ok(true);
@@ -349,17 +349,6 @@ impl Document {
     }
 
     pub fn links<'b, 'l, P: ParagraphWalker>(
-        &self,
-        doc_buf: &'b mut DocumentBuffers,
-        check_anchors: bool,
-    ) -> Result<impl Iterator<Item = Link<'l, P::Paragraph>>, Error>
-    where
-        'b: 'l,
-    {
-        self.links_from_read::<_, P>(doc_buf, fs::File::open(&*self.path)?, check_anchors)
-    }
-
-    fn links_from_html<'b, 'l, P: ParagraphWalker>(
         &self,
         doc_buf: &'b mut DocumentBuffers,
         check_anchors: bool,
