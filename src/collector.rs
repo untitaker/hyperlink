@@ -2,10 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use bumpalo::collections::String as BumpString;
-use bumpalo::Bump;
-
-use crate::html::{push_and_canonicalize, try_percent_decode, Href, Link, UsedLink};
+use crate::html::{Href, Link, UsedLink};
 use crate::urls::is_external_link;
 
 pub trait LinkCollector<P>: Send {
@@ -77,28 +74,15 @@ impl<P: Copy> LinkState<P> {
 
 pub struct LocalLinksOnly<C> {
     pub collector: C,
-    arena: Bump,
 }
 
-pub fn canonicalize_local_link<'a, P>(arena: &Bump, mut link: Link<'a, P>) -> Option<Link<'a, P>> {
-    if let Link::Uses(ref mut used_link) = link {
+/// Filter out external links. Hrefs are already canonicalized by Document::join during
+/// extraction.
+pub fn filter_local_link<P>(link: Link<'_, P>) -> Option<Link<'_, P>> {
+    if let Link::Uses(ref used_link) = link {
         if is_external_link(used_link.href.0.as_bytes()) {
             return None;
         }
-
-        let qs_start = used_link
-            .href
-            .0
-            .find(&['?', '#'][..])
-            .unwrap_or(used_link.href.0.len());
-
-        // try calling canonicalize
-        let path = used_link.path.to_str().unwrap_or("");
-        let mut href = BumpString::from_str_in(path, arena);
-        push_and_canonicalize(
-            &mut href,
-            &try_percent_decode(&used_link.href.0[..qs_start]),
-        );
     }
 
     Some(link)
@@ -108,12 +92,11 @@ impl<P, C: LinkCollector<P>> LinkCollector<P> for LocalLinksOnly<C> {
     fn new() -> Self {
         LocalLinksOnly {
             collector: C::new(),
-            arena: Bump::new(),
         }
     }
 
     fn ingest(&mut self, link: Link<'_, P>) {
-        if let Some(link) = canonicalize_local_link(&self.arena, link) {
+        if let Some(link) = filter_local_link(link) {
             self.collector.ingest(link);
         }
     }

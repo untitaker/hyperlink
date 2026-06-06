@@ -1,4 +1,3 @@
-use bumpalo::collections::String as BumpString;
 use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
 use html5gum::{Emitter, Error, State};
@@ -43,6 +42,7 @@ struct LinkExtractor<'a, 'd, P: ParagraphWalker, F> {
     arena: &'a Bump,
     document: &'d Document,
     link_buf: BumpVec<'a, Link<'a, P::Paragraph>>,
+    scratch: &'d mut String,
     in_paragraph: bool,
     check_anchors: bool,
     callback: F,
@@ -102,8 +102,11 @@ where
     fn extract_used_link(&mut self, value: &[u8]) {
         let value = try_normalize_href_value(std::str::from_utf8(value).unwrap());
 
+        let href = self
+            .document
+            .join(self.arena, self.scratch, self.check_anchors, value);
         self.push_link(Link::Uses(UsedLink {
-            href: self.document.join(self.arena, self.check_anchors, value),
+            href,
             path: self.document.path.clone(),
             paragraph: None,
         }));
@@ -118,8 +121,11 @@ where
             .filter_map(|candidate: &str| candidate.split_whitespace().next())
             .filter(|value| !value.is_empty())
         {
+            let href = self
+                .document
+                .join(self.arena, self.scratch, self.check_anchors, value);
             self.push_link(Link::Uses(UsedLink {
-                href: self.document.join(self.arena, self.check_anchors, value),
+                href,
                 path: self.document.path.clone(),
                 paragraph: None,
             }));
@@ -129,13 +135,9 @@ where
     fn extract_anchor_def(&mut self, value: &[u8]) {
         if self.check_anchors {
             let value = try_normalize_href_value(std::str::from_utf8(value).unwrap());
-            let mut href = BumpString::new_in(self.arena);
-            href.push('#');
-            href.push_str(value);
 
-            self.push_link(Link::Defines(DefinedLink {
-                href: self.document.join(self.arena, self.check_anchors, &href),
-            }));
+            let href = self.document.join_anchor(self.arena, self.scratch, value);
+            self.push_link(Link::Defines(DefinedLink { href }));
         }
     }
 }
@@ -155,6 +157,7 @@ where
         arena: &'a Bump,
         document: &'d Document,
         buffers: &'d mut ParserBuffers,
+        scratch: &'d mut String,
         check_anchors: bool,
         callback: F,
     ) -> Self {
@@ -164,6 +167,7 @@ where
                 arena,
                 document,
                 link_buf: BumpVec::new_in(arena),
+                scratch,
                 in_paragraph: false,
                 check_anchors,
                 callback,

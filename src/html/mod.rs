@@ -9,7 +9,6 @@ use std::str;
 use std::sync::Arc;
 
 use anyhow::Error;
-use bumpalo::collections::String as BumpString;
 use html5gum::{IoReader, Tokenizer};
 
 use crate::paragraph::ParagraphWalker;
@@ -23,7 +22,7 @@ fn is_dynamic_redirect(path: &str) -> bool {
 }
 
 #[inline]
-pub fn push_and_canonicalize(base: &mut BumpString, path: &str) {
+pub fn push_and_canonicalize(base: &mut String, path: &str) {
     if is_external_link(path.as_bytes()) {
         base.clear();
         base.push_str(path);
@@ -61,15 +60,7 @@ pub fn push_and_canonicalize(base: &mut BumpString, path: &str) {
 
 #[cfg(test)]
 mod test_push_and_canonicalize {
-    use super::push_and_canonicalize as push_and_canonicalize_impl;
-    use super::BumpString;
-
-    fn push_and_canonicalize(base: &mut String, path: &str) {
-        let arena = bumpalo::Bump::new();
-        let mut base2 = BumpString::from_str_in(&*base, &arena);
-        push_and_canonicalize_impl(&mut base2, path);
-        *base = base2.as_str().to_owned();
-    }
+    use super::push_and_canonicalize;
 
     #[test]
     fn basic() {
@@ -220,6 +211,9 @@ pub struct DocumentBuffers {
     arena: bumpalo::Bump,
     html_read_buffer: Box<[u8; BUF_SIZE]>,
     parser_buffers: parser::ParserBuffers,
+    /// Scratch space for building hrefs in. The final string is copied into the arena with
+    /// alloc_str, so the arena never sees any grow-and-copy garbage.
+    href_buf: String,
 }
 
 impl Default for DocumentBuffers {
@@ -228,6 +222,7 @@ impl Default for DocumentBuffers {
             arena: Default::default(),
             html_read_buffer: Box::new([0; BUF_SIZE]),
             parser_buffers: Default::default(),
+            href_buf: String::new(),
         }
     }
 }
@@ -236,6 +231,7 @@ impl DocumentBuffers {
     pub fn reset(&mut self) {
         self.arena.reset();
         self.parser_buffers.reset();
+        self.href_buf.clear();
     }
 }
 
@@ -289,27 +285,50 @@ impl Document {
     fn join<'b>(
         &self,
         arena: &'b bumpalo::Bump,
+        scratch: &mut String,
         preserve_anchor: bool,
         rel_href: &str,
     ) -> Href<'b> {
         let qs_start = rel_href.find(&['?', '#'][..]).unwrap_or(rel_href.len());
         let anchor_start = rel_href.find('#').unwrap_or(rel_href.len());
 
-        let mut href = BumpString::from_str_in(&self.href, arena);
+        scratch.clear();
+        scratch.push_str(&self.href);
         if self.is_index_html {
-            href.push('/');
+            scratch.push('/');
         }
 
-        push_and_canonicalize(&mut href, &try_percent_decode(&rel_href[..qs_start]));
+        push_and_canonicalize(scratch, &try_percent_decode(&rel_href[..qs_start]));
 
         if preserve_anchor {
             let anchor = &rel_href[anchor_start..];
             if anchor.len() > 1 {
-                href.push_str(&try_percent_decode(anchor));
+                scratch.push_str(&try_percent_decode(anchor));
             }
         }
 
-        Href(href.into_bump_str())
+        Href(arena.alloc_str(scratch))
+    }
+
+    /// Construct the href under which an anchor (e.g. `id="foo"`) in this document is reachable.
+    ///
+    /// Equivalent to `self.join(arena, scratch, true, &format!("#{anchor}"))`, but without
+    /// having to build the intermediate `#`-prefixed string (which would alias `scratch`).
+    fn join_anchor<'b>(
+        &self,
+        arena: &'b bumpalo::Bump,
+        scratch: &mut String,
+        anchor: &str,
+    ) -> Href<'b> {
+        scratch.clear();
+        scratch.push_str(&self.href);
+
+        if !anchor.is_empty() {
+            scratch.push('#');
+            scratch.push_str(&try_percent_decode(anchor));
+        }
+
+        Href(arena.alloc_str(scratch))
     }
 
     pub fn extract_links<'b, 'l, P: ParagraphWalker, F>(
@@ -409,12 +428,17 @@ impl Document {
                 }
 
                 callback(Link::Defines(DefinedLink {
-                    href: self.join(&doc_buf.arena, check_anchors, source),
+                    href: self.join(&doc_buf.arena, &mut doc_buf.href_buf, check_anchors, source),
                 }));
 
                 if !is_external_link(target.as_bytes()) {
                     callback(Link::Uses(UsedLink {
-                        href: self.join(&doc_buf.arena, check_anchors, target),
+                        href: self.join(
+                            &doc_buf.arena,
+                            &mut doc_buf.href_buf,
+                            check_anchors,
+                            target,
+                        ),
                         path: self.path.clone(),
                         paragraph: None,
                     }));
@@ -440,6 +464,7 @@ impl Document {
             &doc_buf.arena,
             self,
             &mut doc_buf.parser_buffers,
+            &mut doc_buf.href_buf,
             check_anchors,
             callback,
         );
@@ -515,9 +540,7 @@ fn test_html_parsing_malformed_script() {
 
 #[test]
 fn test_document_links() {
-    use bumpalo::Bump;
-
-    use crate::collector::canonicalize_local_link;
+    use crate::collector::filter_local_link;
     use crate::paragraph::ParagraphHasher;
 
     let doc = Document::new(
@@ -527,7 +550,6 @@ fn test_document_links() {
 
     let mut doc_buf = DocumentBuffers::default();
 
-    let arena = Bump::new();
     let mut links = Vec::new();
 
     doc.links_from_read::<_, ParagraphHasher, _>(
@@ -566,7 +588,7 @@ fn test_document_links() {
     """#
         .as_bytes(),
         false,
-        |link| links.extend(canonicalize_local_link(&arena, link)),
+        |link| links.extend(filter_local_link(link)),
     )
     .unwrap();
 
@@ -601,6 +623,7 @@ fn test_document_links() {
 #[test]
 fn test_document_join_index_html() {
     let arena = bumpalo::Bump::new();
+    let mut scratch = String::new();
 
     let doc = Document::new(
         Path::new("public/"),
@@ -608,24 +631,24 @@ fn test_document_join_index_html() {
     );
 
     assert_eq!(
-        doc.join(&arena, false, "../../ruby#foo"),
+        doc.join(&arena, &mut scratch, false, "../../ruby#foo"),
         Href("platforms/ruby")
     );
     assert_eq!(
-        doc.join(&arena, true, "../../ruby#foo"),
+        doc.join(&arena, &mut scratch, true, "../../ruby#foo"),
         Href("platforms/ruby#foo")
     );
     assert_eq!(
-        doc.join(&arena, true, "../../ruby?bar=1#foo"),
+        doc.join(&arena, &mut scratch, true, "../../ruby?bar=1#foo"),
         Href("platforms/ruby#foo")
     );
 
     assert_eq!(
-        doc.join(&arena, false, "/platforms/ruby"),
+        doc.join(&arena, &mut scratch, false, "/platforms/ruby"),
         Href("platforms/ruby")
     );
     assert_eq!(
-        doc.join(&arena, true, "/platforms/ruby?bar=1#foo"),
+        doc.join(&arena, &mut scratch, true, "/platforms/ruby?bar=1#foo"),
         Href("platforms/ruby#foo")
     );
 }
@@ -633,6 +656,7 @@ fn test_document_join_index_html() {
 #[test]
 fn test_document_join_bare_html() {
     let arena = bumpalo::Bump::new();
+    let mut scratch = String::new();
 
     let doc = Document::new(
         Path::new("public/"),
@@ -640,32 +664,37 @@ fn test_document_join_bare_html() {
     );
 
     assert_eq!(
-        doc.join(&arena, false, "../ruby#foo"),
+        doc.join(&arena, &mut scratch, false, "../ruby#foo"),
         Href("platforms/ruby")
     );
     assert_eq!(
-        doc.join(&arena, true, "../ruby#foo"),
+        doc.join(&arena, &mut scratch, true, "../ruby#foo"),
         Href("platforms/ruby#foo")
     );
     assert_eq!(
-        doc.join(&arena, true, "../ruby?bar=1#foo"),
+        doc.join(&arena, &mut scratch, true, "../ruby?bar=1#foo"),
         Href("platforms/ruby#foo")
     );
 
     assert_eq!(
-        doc.join(&arena, false, "/platforms/ruby"),
+        doc.join(&arena, &mut scratch, false, "/platforms/ruby"),
         Href("platforms/ruby")
     );
     assert_eq!(
-        doc.join(&arena, true, "/platforms/ruby?bar=1#foo"),
+        doc.join(&arena, &mut scratch, true, "/platforms/ruby?bar=1#foo"),
         Href("platforms/ruby#foo")
     );
     assert_eq!(
-        doc.join(&arena, false, "/locations/troms%C3%B8"),
+        doc.join(&arena, &mut scratch, false, "/locations/troms%C3%B8"),
         Href("locations/tromsø")
     );
     assert_eq!(
-        doc.join(&arena, true, "/locations/oslo#gr%C3%BCnerl%C3%B8kka"),
+        doc.join(
+            &arena,
+            &mut scratch,
+            true,
+            "/locations/oslo#gr%C3%BCnerl%C3%B8kka"
+        ),
         Href("locations/oslo#grünerløkka")
     );
 }
