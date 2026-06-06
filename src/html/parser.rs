@@ -1,9 +1,8 @@
-use bumpalo::collections::Vec as BumpVec;
 use bumpalo::Bump;
 use html5gum::{Emitter, Error, State};
 
 use crate::html::{DefinedLink, Document, Link, UsedLink};
-use crate::paragraph::ParagraphWalker;
+use crate::paragraph::{ParagraphWalker, VoidParagraph};
 
 #[inline]
 fn is_paragraph_tag(tag: &[u8]) -> bool {
@@ -41,7 +40,10 @@ struct LinkExtractor<'a, 'd, P: ParagraphWalker, F> {
     paragraph_walker: P,
     arena: &'a Bump,
     document: &'d Document,
-    link_buf: BumpVec<'a, Link<'a, P::Paragraph>>,
+    /// Buffers the links of the currently open paragraph, see push_link. Lent out by
+    /// DocumentBuffers so the allocation is reused across documents. Buffered links have no
+    /// paragraph yet, it is attached in flush_links.
+    link_buf: &'d mut Vec<Link<'a, VoidParagraph>>,
     scratch: &'d mut String,
     in_paragraph: bool,
     check_anchors: bool,
@@ -54,49 +56,46 @@ where
     F: FnMut(Link<'a, P::Paragraph>),
 {
     /// Links inside a paragraph are buffered until the paragraph is closed (their paragraph hash
-    /// is assigned retroactively), all other links go straight to the callback.
+    /// is assigned retroactively in flush_links), all other links go straight to the callback.
     ///
     /// If P is a noop walker, no paragraphs are tracked and link_buf is never used.
-    fn push_link(&mut self, link: Link<'a, P::Paragraph>) {
+    fn push_link(&mut self, link: Link<'a, VoidParagraph>) {
         if !P::is_noop() && self.in_paragraph {
             self.link_buf.push(link);
         } else {
-            (self.callback)(link);
+            (self.callback)(link.with_paragraph(None));
         }
     }
 
-    fn flush_links(&mut self) {
+    fn flush_links(&mut self, paragraph: Option<P::Paragraph>) {
         if P::is_noop() {
             return;
         }
 
         for link in self.link_buf.drain(..) {
-            (self.callback)(link);
+            (self.callback)(link.with_paragraph(paragraph.clone()));
         }
     }
 
+    /// Begin a new paragraph. If a previous paragraph tag was left unclosed (e.g. the first link
+    /// in <li><a href=..><p>..</p></li> -- html5gum is not a tree builder, so there are no
+    /// implied end tags), it is ended here and its links get the paragraph text accumulated up
+    /// to this point.
     fn begin_paragraph(&mut self) {
-        // links buffered under a paragraph that never got closed never get a paragraph
-        // assigned
-        self.flush_links();
+        self.end_paragraph();
         self.in_paragraph = true;
-        self.paragraph_walker.finish_paragraph();
     }
 
     fn end_paragraph(&mut self) {
-        let paragraph = self.paragraph_walker.finish_paragraph();
         if self.in_paragraph {
-            for link in &mut self.link_buf {
-                match link {
-                    Link::Uses(ref mut x) => {
-                        x.paragraph = paragraph.clone();
-                    }
-                    Link::Defines(_) => (),
-                }
-            }
+            let paragraph = self.paragraph_walker.finish_paragraph();
             self.in_paragraph = false;
+            self.flush_links(paragraph);
+        } else {
+            // the walker only accumulates text while in_paragraph (see emit_string) and links
+            // are only buffered inside paragraphs, so there is nothing to finish here
+            debug_assert!(self.link_buf.is_empty());
         }
-        self.flush_links();
     }
 
     fn extract_used_link(&mut self, value: &[u8]) {
@@ -158,6 +157,7 @@ where
         document: &'d Document,
         buffers: &'d mut ParserBuffers,
         scratch: &'d mut String,
+        link_buf: &'d mut Vec<Link<'a, VoidParagraph>>,
         check_anchors: bool,
         callback: F,
     ) -> Self {
@@ -166,7 +166,7 @@ where
                 paragraph_walker: P::new(),
                 arena,
                 document,
-                link_buf: BumpVec::new_in(arena),
+                link_buf,
                 scratch,
                 in_paragraph: false,
                 check_anchors,
@@ -256,9 +256,8 @@ where
     }
 
     fn set_self_closing(&mut self) {
-        if !P::is_noop() && is_paragraph_tag(&self.buffers.current_tag_name) {
-            self.extractor.in_paragraph = false;
-        }
+        // self-closing flag carries no semantic meaning, so we have to ignore it in order to be
+        // correct. we need to dispatch based on tag name, if anything.
     }
 
     fn push_tag_name(&mut self, s: &[u8]) {
@@ -284,8 +283,8 @@ where
     }
 
     fn emit_eof(&mut self) {
-        // links buffered under a paragraph that never got closed never get a paragraph assigned
-        self.extractor.flush_links();
+        // a paragraph tag may have been left unclosed at eof
+        self.extractor.end_paragraph();
     }
 
     fn emit_current_comment(&mut self) {}

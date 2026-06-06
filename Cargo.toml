@@ -23,10 +23,11 @@ blake3 = "1.0.0"
 
 html5gum = "0.8.0"
 jwalk = "0.8.1"
-bumpalo = { version = "3.11.1", features = ["collections"] }
+bumpalo = "3.11.1"
 percent-encoding = "2.1.0"
 num_cpus = "1.15.0"
 bpaf = { version = "0.9.16", features = ["derive"] }
+recycle_vec = "1.1.2"
 
 [dev-dependencies]
 assert_cmd = "2.1.1"

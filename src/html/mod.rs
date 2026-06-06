@@ -11,7 +11,7 @@ use std::sync::Arc;
 use anyhow::Error;
 use html5gum::{IoReader, Tokenizer};
 
-use crate::paragraph::ParagraphWalker;
+use crate::paragraph::{ParagraphWalker, VoidParagraph};
 use crate::urls::is_external_link;
 
 #[cfg(test)]
@@ -193,11 +193,23 @@ pub enum Link<'a, P> {
     Defines(DefinedLink<'a>),
 }
 
-impl<P> Link<'_, P> {
+impl<'a, P> Link<'a, P> {
     pub fn into_paragraph(self) -> Option<P> {
         match self {
             Link::Uses(UsedLink { paragraph, .. }) => paragraph,
             Link::Defines(_) => None,
+        }
+    }
+
+    /// Replace the paragraph of this link, converting between paragraph types.
+    fn with_paragraph<Q>(self, paragraph: Option<Q>) -> Link<'a, Q> {
+        match self {
+            Link::Uses(UsedLink { href, path, .. }) => Link::Uses(UsedLink {
+                href,
+                path,
+                paragraph,
+            }),
+            Link::Defines(DefinedLink { href }) => Link::Defines(DefinedLink { href }),
         }
     }
 }
@@ -214,6 +226,11 @@ pub struct DocumentBuffers {
     /// Scratch space for building hrefs in. The final string is copied into the arena with
     /// alloc_str, so the arena never sees any grow-and-copy garbage.
     href_buf: String,
+    /// Scratch space for the parser's paragraph link buffer. Outside of links_from_read this is
+    /// always empty, only the allocation is reused across documents (the 'static lifetime is
+    /// laundered through recycle()). Buffered links never carry a paragraph -- it is attached
+    /// when the buffer is flushed -- hence VoidParagraph.
+    link_buf: Vec<Link<'static, VoidParagraph>>,
 }
 
 impl Default for DocumentBuffers {
@@ -223,6 +240,7 @@ impl Default for DocumentBuffers {
             html_read_buffer: Box::new([0; BUF_SIZE]),
             parser_buffers: Default::default(),
             href_buf: String::new(),
+            link_buf: Vec::new(),
         }
     }
 }
@@ -460,11 +478,17 @@ impl Document {
         'b: 'l,
         F: FnMut(Link<'l, P::Paragraph>),
     {
+        // borrow the recycled link buffer from doc_buf, shortening 'static to the arena borrow
+        // (safe, Vec and Link are covariant). On the error path below, the buffer is dropped and
+        // its allocation is simply not reused.
+        let mut link_buf: Vec<Link<'_, VoidParagraph>> = std::mem::take(&mut doc_buf.link_buf);
+
         let emitter = parser::HyperlinkEmitter::<P, _>::new(
             &doc_buf.arena,
             self,
             &mut doc_buf.parser_buffers,
             &mut doc_buf.href_buf,
+            &mut link_buf,
             check_anchors,
             callback,
         );
@@ -474,6 +498,8 @@ impl Document {
         for error in reader {
             error?;
         }
+
+        doc_buf.link_buf = recycle_vec::VecExt::recycle(link_buf);
 
         Ok(())
     }
@@ -696,6 +722,60 @@ fn test_document_join_bare_html() {
             "/locations/oslo#gr%C3%BCnerl%C3%B8kka"
         ),
         Href("locations/oslo#grünerløkka")
+    );
+}
+
+#[test]
+fn test_paragraph_nesting() {
+    use crate::paragraph::{DebugParagraphWalker, ParagraphHasher};
+
+    // li and p are both paragraph tags. html5gum is not a tree builder, so the opening p does
+    // not implicitly close the li: it ends the li's paragraph, and links buffered under the li
+    // get the paragraph text accumulated up to that point. links outside of any paragraph
+    // get no paragraph at all, while links in a text-less paragraph (empty) get an empty one.
+    let html = r#"
+        <a href=first />
+        <p><a href=empty /></p>
+        <a href=between />
+        <li>
+            one two
+            <a href=before />
+            <p>three four <a href=inside /></p>
+            <a href=after />
+        </li>
+    "#;
+
+    let doc = Document::new(Path::new("public/"), Path::new("public/hello.html"));
+
+    let mut doc_buf = DocumentBuffers::default();
+
+    let mut links = Vec::new();
+    doc.links_from_read::<_, DebugParagraphWalker<ParagraphHasher>, _>(
+        &mut doc_buf,
+        html.as_bytes(),
+        false,
+        |link| links.push(link),
+    )
+    .unwrap();
+
+    let links: Vec<_> = links
+        .into_iter()
+        .map(|link| match link {
+            Link::Uses(used_link) => (used_link.href.0, used_link.paragraph.map(|p| p.to_string())),
+            Link::Defines(_) => panic!("unexpected defined link"),
+        })
+        .collect();
+
+    assert_eq!(
+        links,
+        &[
+            ("first", None),
+            ("empty", Some("".to_string())),
+            ("between", None),
+            ("before", Some("onetwo".to_string())),
+            ("inside", Some("threefour".to_string())),
+            ("after", None),
+        ]
     );
 }
 

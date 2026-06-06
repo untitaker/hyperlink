@@ -339,6 +339,7 @@ dependencies = [
  "pretty_assertions",
  "pulldown-cmark",
  "rayon",
+ "recycle_vec",
 ]
 
 [[package]]
@@ -588,6 +589,12 @@ dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
 ]
+
+[[package]]
+name = "recycle_vec"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10e9cc122e426bc407b6645a97bd351c2678abbeffd2295e73ca854cd2f15aed"
 
 [[package]]
 name = "regex"
