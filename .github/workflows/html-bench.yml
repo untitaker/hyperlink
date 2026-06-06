@@ -1,0 +1,28 @@
+name: html-bench
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check html-bench
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/html-bench
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo
+            tools/html-bench/target/
+          key: html-bench-${{ runner.os }}-${{ hashFiles('tools/html-bench/Cargo.lock') }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo check
