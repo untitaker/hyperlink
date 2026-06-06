@@ -375,7 +375,9 @@ fn dump_paragraphs(path: PathBuf) -> Result<(), Error> {
                 &mut doc_buf,
                 false,
                 |link| {
-                    paragraphs.extend(link.into_paragraph().map(|paragraph| (paragraph, None)));
+                    if let Some(paragraph) = link.into_paragraph() {
+                        paragraphs.insert((paragraph, None));
+                    }
                 },
             )?;
             paragraphs
