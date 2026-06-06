@@ -8,7 +8,7 @@ use anyhow::Error;
 use structopt::StructOpt;
 
 use rand::rngs::SmallRng;
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 use rand::SeedableRng;
 
 #[derive(StructOpt)]
@@ -38,7 +38,7 @@ fn main() -> Result<(), Error> {
     let mut rng = if let Some(seed) = seed {
         SmallRng::seed_from_u64(seed)
     } else {
-        SmallRng::from_entropy()
+        SmallRng::from_os_rng()
     };
 
     let paths = generate_paths(file_count, max_folder_size);
