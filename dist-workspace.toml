@@ -19,3 +19,7 @@ npm-scope = "@untitaker"
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
+# Emit GitHub build attestations (Sigstore-backed SLSA provenance) for
+# release artifacts, recorded in GitHub's transparency log so consumers can
+# verify them independently of the (mutable) release assets — see #198.
+github-attestations = true
