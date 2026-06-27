@@ -23,3 +23,9 @@ install-updater = false
 # release artifacts, recorded in GitHub's transparency log so consumers can
 # verify them independently of the (mutable) release assets — see #198.
 github-attestations = true
+# Attest in the "host" phase, not the default "build-local-artifacts". The
+# default only attests the per-target binaries; the installer scripts and
+# checksums are *global* artifacts assembled in the host phase, so attesting
+# there is what gives hyperlink-installer.sh (the file scripts/install.sh
+# verifies) an attestation at all.
+github-attestations-phase = "host"

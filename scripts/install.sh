@@ -14,11 +14,19 @@ echo "downloading hyperlink $tag"
 # GITHUB_TOKEN. Attestations exist for releases built after
 # `github-attestations` was enabled in dist-workspace.toml.
 installer="`mktemp`"
+# Always clean up the temp file, including when `set -e` aborts on a failed
+# verification below.
+trap 'rm -f "$installer"' EXIT
+
 curl --proto '=https' --tlsv1.2 -LsSf \
     "https://github.com/untitaker/hyperlink/releases/download/$tag/hyperlink-installer.sh" \
     -o "$installer"
 
-gh attestation verify "$installer" --repo untitaker/hyperlink
+# Pin the producing workflow, not just the repo: only an attestation minted by
+# the real release workflow is accepted, so a different (or compromised)
+# workflow in the same repo cannot mint one that passes.
+gh attestation verify "$installer" \
+    --repo untitaker/hyperlink \
+    --signer-workflow untitaker/hyperlink/.github/workflows/release.yml
 
 sh "$installer"
-rm -f "$installer"
