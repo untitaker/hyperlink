@@ -34,10 +34,13 @@ git tag $new_version
 
 git show HEAD
 
+echo ">>> Publishing"
+
+cargo publish
+git push
+git push origin $new_version
+
 set +x
 
 echo "things left to do:"
-echo "  cargo publish"
-echo "  git push"
-echo "  git push origin $new_version"
 echo "  re-run the install-tester.yml workflow to see that the release can be used"
