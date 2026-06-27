@@ -17,6 +17,8 @@ runs:
         cd ${{ github.action_path }}
         sh scripts/install.sh
       shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
 
     - name: Run Hyperlink
       run: ~/.cargo/bin/hyperlink --github-actions ${{ inputs.args }}
