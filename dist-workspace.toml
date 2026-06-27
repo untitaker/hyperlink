@@ -19,13 +19,7 @@ npm-scope = "@untitaker"
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
-# Emit GitHub build attestations (Sigstore-backed SLSA provenance) for
-# release artifacts, recorded in GitHub's transparency log so consumers can
-# verify them independently of the (mutable) release assets — see #198.
+# Attest release artifacts (see #198); "host" phase so the installer — a global
+# artifact — is covered, not just the per-target binaries.
 github-attestations = true
-# Attest in the "host" phase, not the default "build-local-artifacts". The
-# default only attests the per-target binaries; the installer scripts and
-# checksums are *global* artifacts assembled in the host phase, so attesting
-# there is what gives hyperlink-installer.sh (the file scripts/install.sh
-# verifies) an attestation at all.
 github-attestations-phase = "host"
