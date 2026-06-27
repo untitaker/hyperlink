@@ -50,6 +50,29 @@ A command-line tool to find broken links in your static site.
     args: public/ --sources src/
 ```
 
+The action downloads the prebuilt binary and verifies it against its [GitHub
+build
+attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds)
+before running (see #198). Verification uses the `gh` CLI: on GitHub-hosted
+runners `gh` is present, so the check runs automatically. On runners without
+`gh` — e.g. [Forgejo](https://forgejo.org/) or other non-GitHub CI —
+verification is skipped with a warning so the action still works.
+
+Two environment variables override this:
+
+* `HYPERLINK_SKIP_ATTESTATION=1` skips verification entirely, even when `gh` is
+  available.
+* `HYPERLINK_FORCE_ATTESTATION=1` requires verification and fails when `gh` is
+  missing.
+
+```yaml
+- uses: untitaker/hyperlink@0.2.1
+  env:
+    HYPERLINK_SKIP_ATTESTATION: "1"
+  with:
+    args: public/ --sources src/
+```
+
 ### NPM
 
 ```bash
