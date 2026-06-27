@@ -19,3 +19,7 @@ npm-scope = "@untitaker"
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
+# Attest release artifacts (see #198); "host" phase so the installer — a global
+# artifact — is covered, not just the per-target binaries.
+github-attestations = true
+github-attestations-phase = "host"
