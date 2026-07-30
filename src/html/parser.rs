@@ -82,11 +82,19 @@ where
     /// implied end tags), it is ended here and its links get the paragraph text accumulated up
     /// to this point.
     fn begin_paragraph(&mut self) {
+        if P::is_noop() {
+            return;
+        }
+
         self.end_paragraph();
         self.in_paragraph = true;
     }
 
     fn end_paragraph(&mut self) {
+        if P::is_noop() {
+            return;
+        }
+
         if self.in_paragraph {
             let paragraph = self.paragraph_walker.finish_paragraph();
             self.in_paragraph = false;
